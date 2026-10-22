@@ -254,6 +254,6 @@ journalctl --user -u discord-listener.service -f
 
 ---
 
-## 📄 License
+## 📄 License & Credits
 
-MIT License. Designed and engineered by [Khalid Benjelloun](https://benjelloun.dev).
+Built by [Khalid Benjelloun](https://benjelloun.dev) with [Google Antigravity](https://github.com/google). MIT License.
