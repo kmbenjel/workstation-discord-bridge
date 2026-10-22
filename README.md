@@ -16,9 +16,9 @@
 
 ## 📌 Executive Summary
 
-**Workstation Discord Bridge** is a production-grade, bi-directional operations bridge connecting an active Linux development workstation to Discord. It enables full, low-latency mobile supervision and steering over autonomous AI developer sessions (Google Antigravity Desktop & CLI, Claude Code), long-running background tasks, system resources, and shell operations directly from a mobile smartphone without needing a clunky remote desktop client.
+**Workstation Discord Bridge** is a production-grade, bi-directional operations bridge connecting an active Linux development workstation to Discord. It enables full, low-latency mobile supervision and steering over autonomous AI developer sessions (Google Antigravity Desktop & CLI, Claude Desktop & Claude Code), long-running background tasks, system resources, and shell operations directly from a mobile smartphone without needing a clunky remote desktop client.
 
-Whether commuting, away from the desk, or monitoring overnight multi-hour build/crop pipelines, you have complete visibility and interactive control over your machine's terminal, memory, agents, and active projects in your pocket.
+Whether commuting, away from the desk, or monitoring overnight builds, you can **launch and run Antigravity and Claude Desktop sessions**, **activate remote control on Claude** to seamlessly hand off and continue development on mobile, manage background processes, and inspect live hardware telemetry — all directly using Discord messages.
 
 ---
 
@@ -118,9 +118,11 @@ sequenceDiagram
 
 ## ⚡ Core Capabilities & Technical Highlights
 
-### 1. Antigravity Desktop & CLI Unified Control
+### 1. Antigravity & Claude Desktop Orchestration with Mobile Remote Control
+- **Launch & Steer Desktop Sessions**: Trigger, steer, and interact with Google Antigravity Desktop IDE sessions and Claude Desktop runs directly through Discord chat messages.
+- **Claude Remote Control Handoff**: Activate remote control mode on Claude via Discord commands, seamlessly handing off active desktop coding sessions to continue steering and reviewing on mobile without missing a beat.
 - **Dynamic Port & Token Discovery**: `discord_manager.py` inspects active Linux process trees (`ps -ef`), extracts the dynamic language server port and CSRF authentication token from `/proc/<pid>/cmdline`, and automatically handles authentication without static passwords.
-- **Headless Auto-Launch**: If the Desktop IDE is closed, the manager can auto-launch it in a headless/virtual display environment or gracefully divert the task to `/home/k/.local/bin/agy` CLI.
+- **Headless Auto-Launch & CLI Fallback**: If the Desktop IDE is closed, the manager can auto-launch it in a headless display environment or gracefully divert the task to `/home/k/.local/bin/agy` CLI.
 - **Bi-directional Symlink Mesh**: Automatically unifies conversation histories across Desktop (`~/.gemini/antigravity/brain`) and CLI (`~/.gemini/antigravity-cli/brain`), allowing you to inspect CLI runs from Desktop and vice versa.
 
 ### 2. Comprehensive Mobile Command Suite
@@ -234,9 +236,9 @@ journalctl --user -u discord-listener.service -f
 
 <div align="center">
 
-| 📱 Mobile Thread Dispatch | ⚡ Live Telemetry & Process Check |
+| 📱 Mobile Agent Steering & Desktop Sessions | ⚡ Live Telemetry & Process Check |
 |:---:|:---:|
-| ![Mobile Agent Steering Placeholder](https://placehold.co/400x700/1e293b/38bdf8?text=Mobile+Agent+Steering+Thread) <br> *Real-time prompt steering & code diff delivery* | ![System Telemetry Placeholder](https://placehold.co/400x700/1e293b/10b981?text=Workstation+Telemetry+Report) <br> *`!status` hardware & active background pipeline metrics* |
+| ![Mobile Agent Steering Placeholder](https://placehold.co/400x700/1e293b/38bdf8?text=Antigravity+%26+Claude+Desktop+Steering) <br> *Run Antigravity & Claude Desktop sessions, activate Claude remote control, and review code diffs directly from mobile Discord* | ![System Telemetry Placeholder](https://placehold.co/400x700/1e293b/10b981?text=Workstation+Telemetry+Report) <br> *`!status` hardware & active background pipeline metrics* |
 
 </div>
 
