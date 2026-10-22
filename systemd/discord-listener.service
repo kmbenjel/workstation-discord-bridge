@@ -1,0 +1,15 @@
+[Unit]
+Description=Workstation Discord Bridge Listener
+After=network.target
+
+[Service]
+Type=simple
+User=%I
+WorkingDirectory=/home/%I/projects/workstation-discord-bridge
+ExecStart=/usr/bin/python3 /home/%I/projects/workstation-discord-bridge/discord_listener.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

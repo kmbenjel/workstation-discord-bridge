@@ -1,0 +1,6 @@
+{
+  "bot_token": "YOUR_DISCORD_BOT_TOKEN_HERE",
+  "guild_id": "YOUR_DISCORD_GUILD_ID",
+  "channel_id": "YOUR_DISCORD_CHANNEL_ID",
+  "user_id": "YOUR_DISCORD_USER_ID"
+}

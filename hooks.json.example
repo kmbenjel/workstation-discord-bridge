@@ -1,0 +1,12 @@
+{
+  "discord-reply-sync": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/usr/bin/python3 /path/to/discord_hook.py",
+        "timeout": 15
+      }
+    ]
+  }
+}

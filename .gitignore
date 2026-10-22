@@ -1,0 +1,13 @@
+discord_config.json
+discord_threads.json
+discord_state.json
+discord_listener_state.json
+discord_archive_state.json
+*.lock
+*.log
+__pycache__/
+*.py[cod]
+*.class
+.venv/
+.env
+.DS_Store
