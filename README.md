@@ -231,14 +231,11 @@ journalctl --user -u discord-listener.service -f
 
 ## 📸 Mobile Supervision & Live Agent Steering Showcase
 
-> [!NOTE]
-> Below are placeholder cards for visual captures, mobile screenshots, and live screen-cast demos illustrating real-world steering of the Linux workstation from iOS / Android.
-
 <div align="center">
 
 | 📱 Mobile Agent Steering & Desktop Sessions | ⚡ Live Telemetry & Process Check |
 |:---:|:---:|
-| ![Mobile Agent Steering Placeholder](https://placehold.co/400x700/1e293b/38bdf8?text=Antigravity+%26+Claude+Desktop+Steering) <br> *Run Antigravity & Claude Desktop sessions, activate Claude remote control, and review code diffs directly from mobile Discord* | ![System Telemetry Placeholder](https://placehold.co/400x700/1e293b/10b981?text=Workstation+Telemetry+Report) <br> *`!status` hardware & active background pipeline metrics* |
+| <img src="docs/screenshots/mobile_agent_steering.png" width="360" alt="Mobile Agent Steering & Desktop Sessions"> <br> *Run Antigravity & Claude Desktop sessions, activate remote steering, and review turns directly from mobile Discord* | <img src="docs/screenshots/live_telemetry_check.png" width="360" alt="Live Telemetry & Process Check"> <br> *Live `!status` hardware health, CPU/RAM load, thermals, and background service metrics* |
 
 </div>
 
@@ -248,7 +245,7 @@ journalctl --user -u discord-listener.service -f
 
 | 🛑 Emergency Process Cancellation | 💻 Raw Shell Execution (`!sh`) |
 |:---:|:---:|
-| ![Process Kill Placeholder](https://placehold.co/400x700/1e293b/ef4444?text=Remote+Cancel+and+Stop) <br> *Instant termination of stuck subagents via `!stop`* | ![Shell Command Placeholder](https://placehold.co/400x700/1e293b/a855f7?text=Remote+Shell+Execution) <br> *Safe single-line bash execution directly from mobile* |
+| <img src="docs/screenshots/emergency_process_cancellation.png" width="360" alt="Emergency Process Cancellation"> <br> *Instant termination of stuck subagents and runaway loops via `!stop`* | <img src="docs/screenshots/raw_shell_execution.png" width="360" alt="Raw Shell Execution"> <br> *Direct Linux bash command execution returned with formatted terminal styling* |
 
 </div>
 
