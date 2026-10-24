@@ -138,19 +138,19 @@ Screenshots captured from the mobile Discord client during live workstation sess
 
 | 🎛️ Claude Code Remote Control (`!claude`) | 🧠 AI Models Quota Monitor (`!models`) |
 |:---:|:---:|
-| <img src="docs/screenshots/claude_remote_control.png" width="370" alt="Claude Code Remote Control"> <br> *Direct bridge URL for Claude iOS/Android app, working directory, and live steering* | <img src="docs/screenshots/ai_models_quota_check.png" width="370" alt="AI Models Quota Monitor"> <br> *Quota percentage check across Gemini 3.8 Flash, Opus 5.5, Sonnet 5.5, and Argon* |
+| <img src="docs/screenshots/claude_remote_control.png" width="370" alt="Claude Code Remote Control"> <br> *Direct bridge URL for Claude iOS/Android app, working directory, and live process connection* | <img src="docs/screenshots/ai_models_quota_check.png" width="370" alt="AI Models Quota Monitor"> <br> *Quota percentage check across Gemini 3.8 Flash, Opus 5.5, Sonnet 5.5, and Argon* |
 
 <br>
 
 | 📊 Workstation Telemetry (`!status`) | 🔍 Conversation Archive Search (`!search`) |
 |:---:|:---:|
-| <img src="docs/screenshots/live_telemetry_check.png" width="370" alt="Workstation Telemetry"> <br> *Host hardware metrics: CPU load, RAM and swap, thermals, and battery level* | <img src="docs/screenshots/conversation_archive_search.png" width="370" alt="Conversation Archive Search"> <br> *Instant full-text query across past session titles and turns with direct thread links* |
+| <img src="docs/screenshots/live_telemetry_check.png" width="370" alt="Workstation Telemetry"> <br> *Host hardware metrics: CPU load, RAM and swap, thermals, and battery level* | <img src="docs/screenshots/conversation_archive_search.png" width="370" alt="Conversation Archive Search"> <br> *Instant full-text query across past session history and turns (`!search latency`)* |
 
 <br>
 
-| 📱 Active Session Controller (`!running`) | 🛑 Emergency Process Cancellation (`!stop`) |
+| 💬 Conversational Agent Steering | 🛑 Emergency Process Cancellation (`!stop`) |
 |:---:|:---:|
-| <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Active Session Controller"> <br> *Overview of active cascades, background tasks, and language server status* | <img src="docs/screenshots/emergency_process_cancellation.png" width="370" alt="Emergency Process Cancellation"> <br> *Instant termination of runaway tasks and background workers via `!stop`* |
+| <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Conversational Agent Steering"> <br> *Natural developer question asked from Discord mobile and executed by the workstation agent* | <img src="docs/screenshots/emergency_process_cancellation.png" width="370" alt="Emergency Process Cancellation"> <br> *Instant termination of runaway tasks and background workers via `!stop`* |
 
 <br>
 
