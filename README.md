@@ -38,7 +38,21 @@ Whether commuting, away from the desk, or monitoring overnight builds, you can *
 
 ## 🔄 Two-Way Interaction Lifecycle: Desk ⇄ Mobile
 
-The bridge operates symmetrically in both directions, seamlessly uniting desktop IDE workflows with mobile-on-the-go supervision:
+The bridge operates symmetrically in both directions, seamlessly uniting Google Antigravity Desktop IDE workflows with Discord mobile-on-the-go supervision:
+
+### 1. Direction 1: Desk ➔ Mobile ("Prompt in Antigravity IDE, Read on Phone")
+Work initiated at the desktop IDE (such as triggering agent cascades, running test suites, or refactoring code) executes locally on your workstation. Upon turn completion, the Antigravity lifecycle hook (`discord_hook.py`) automatically formats and pushes the complete response to the active Discord thread on your smartphone in under 1.5 seconds.
+
+<div align="center">
+
+<img src="docs/screenshots/desktop_prompt_mobile_read.png" width="950" alt="Antigravity IDE to Discord Mobile Read">
+
+*Direction 1: Google Antigravity IDE (left) executes desktop prompt and dispatches test verification live to Discord Mobile (right) via lifecycle hook*
+
+</div>
+
+### 2. Direction 2: Mobile ➔ Workstation ➔ Mobile ("Prompt on Phone, Execute on Host, Read on Phone")
+When away from your workstation, send commands or prompts directly into Discord (`!claude <prompt>`, `!models`, `!search`, `!sh <cmd>`, or direct agent steering prompts). The background poller (`discord_listener.py`) captures the prompt with sub-second latency, dispatches execution to the host workstation runtime (Claude Code Native, Antigravity, or system shell), and pushes the full execution telemetry directly back into your mobile Discord thread.
 
 <div align="center">
 
@@ -47,11 +61,6 @@ The bridge operates symmetrically in both directions, seamlessly uniting desktop
 *Complete bidirectional lifecycle: (Left) Prompting in Desktop Antigravity IDE pushes the verified answer to Discord Mobile via hooks. (Right) Prompting from Discord Mobile executes on workstation runtimes and streams the result directly back to your phone.*
 
 </div>
-
-- **Direction 1: Desk ➔ Mobile ("Prompt Here, Read on Phone")**:
-  Work initiated at the desktop IDE (such as triggering long-running agent cascades, refactoring codebase modules, or running test suites) executes locally on your workstation. Upon turn completion, the Antigravity lifecycle hook (`discord_hook.py`) automatically formats, Bidi-isolates, and pushes the complete response to the active Discord thread on your smartphone. You can step away from your desk at any time without losing context.
-- **Direction 2: Mobile ➔ Desk ➔ Mobile ("Prompt on Phone, Execute on Workstation, Read on Phone")**:
-  When away from your workstation, send commands or prompts directly into Discord (`!claude <prompt>`, `!models`, `!search`, `!sh <cmd>`, or direct agent steering prompts). The background poller (`discord_listener.py`) captures the prompt with sub-second latency, dispatches execution to the host workstation runtime (Claude Code Native, Antigravity, or system shell), and pushes the full execution telemetry directly back into your mobile Discord thread.
 
 ---
 
@@ -183,7 +192,7 @@ All screenshots below are captured directly from the authentic Discord mobile we
 
 | 📲 Desktop Prompt ➔ Mobile Read | 📱 Autonomous Agent Steering Turn |
 |:---:|:---:|
-| <img src="docs/screenshots/desktop_prompt_mobile_read.png" width="370" alt="Desktop Prompt Pushed to Mobile"> <br> *Desktop IDE prompt executed on workstation and read live on Discord Mobile with Arabic RTL & Bidi* | <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Autonomous Agent Steering Turn"> <br> *Multi-turn autonomous coding execution with turn status pills and review cards* |
+| <img src="docs/screenshots/desktop_prompt_mobile_read.png" width="370" alt="Desktop Prompt Pushed to Mobile"> <br> *Google Antigravity IDE prompt executed on host and read live on Discord Mobile via hook* | <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Autonomous Agent Steering Turn"> <br> *Multi-turn autonomous coding execution with turn status pills and review cards* |
 
 <br>
 
