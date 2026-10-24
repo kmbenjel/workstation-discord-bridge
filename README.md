@@ -36,6 +36,25 @@ Whether commuting, away from the desk, or monitoring overnight builds, you can *
 
 ---
 
+## 🔄 Two-Way Interaction Lifecycle: Desk ⇄ Mobile
+
+The bridge operates symmetrically in both directions, seamlessly uniting desktop IDE workflows with mobile-on-the-go supervision:
+
+<div align="center">
+
+<img src="docs/screenshots/two_way_handover_flow.png" width="950" alt="Two-Way Interaction Lifecycle: Desk to Mobile and Mobile to Workstation">
+
+*Complete bidirectional lifecycle: (Left) Prompting in Desktop Antigravity IDE pushes the verified answer to Discord Mobile via hooks. (Right) Prompting from Discord Mobile executes on workstation runtimes and streams the result directly back to your phone.*
+
+</div>
+
+- **Direction 1: Desk ➔ Mobile ("Prompt Here, Read on Phone")**:
+  Work initiated at the desktop IDE (such as triggering long-running agent cascades, refactoring codebase modules, or running test suites) executes locally on your workstation. Upon turn completion, the Antigravity lifecycle hook (`discord_hook.py`) automatically formats, Bidi-isolates, and pushes the complete response to the active Discord thread on your smartphone. You can step away from your desk at any time without losing context.
+- **Direction 2: Mobile ➔ Desk ➔ Mobile ("Prompt on Phone, Execute on Workstation, Read on Phone")**:
+  When away from your workstation, send commands or prompts directly into Discord (`!claude <prompt>`, `!models`, `!search`, `!sh <cmd>`, or direct agent steering prompts). The background poller (`discord_listener.py`) captures the prompt with sub-second latency, dispatches execution to the host workstation runtime (Claude Code Native, Antigravity, or system shell), and pushes the full execution telemetry directly back into your mobile Discord thread.
+
+---
+
 ## 🏗️ Architecture & Data Flow
 
 The bridge decouples **inbound mobile commands** (polled via a high-frequency, resilient listener with 15 synchronized active threads) from **outbound agent responses** (triggered deterministically via lifecycle hooks), ensuring zero blocking on the agent runtime and instant event dispatching.
@@ -162,9 +181,9 @@ All screenshots below are captured directly from the authentic Discord mobile we
 
 <br>
 
-| 🧵 Discord Threads Sidebar Sync (Top 15) | 📱 Autonomous Agent Steering Turn |
+| 📲 Desktop Prompt ➔ Mobile Read | 📱 Autonomous Agent Steering Turn |
 |:---:|:---:|
-| <img src="docs/screenshots/discord_threads_sidebar_sync.png" width="370" alt="Discord Threads Sidebar Sync"> <br> *Top 15 active conversations synchronized under `#general` with older ones indexed* | <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Autonomous Agent Steering Turn"> <br> *Multi-turn autonomous coding execution with turn status pills and review cards* |
+| <img src="docs/screenshots/desktop_prompt_mobile_read.png" width="370" alt="Desktop Prompt Pushed to Mobile"> <br> *Desktop IDE prompt executed on workstation and read live on Discord Mobile with Arabic RTL & Bidi* | <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Autonomous Agent Steering Turn"> <br> *Multi-turn autonomous coding execution with turn status pills and review cards* |
 
 <br>
 
