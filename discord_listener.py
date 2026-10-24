@@ -134,6 +134,19 @@ def create_thread_for_general_message(token, general_channel_id, msg, author_id,
     thread_id = None
     starter_id = msg_id
 
+    # 1. Check if the message payload already contains the thread
+    if msg.get("thread") and isinstance(msg["thread"], dict) and msg["thread"].get("id"):
+        thread_id = msg["thread"]["id"]
+        thread_name = msg["thread"].get("name") or thread_name
+        return thread_id, thread_name, new_conv_id, starter_id
+
+    # 2. Check if a thread was already recorded in threads.json for this starter message
+    existing_threads = load_json(THREADS_FILE, {})
+    for c_id, c_info in existing_threads.items():
+        if isinstance(c_info, dict) and (c_info.get("starter_id") == msg_id or c_info.get("thread_id") == msg_id):
+            return c_info["thread_id"], c_info.get("title") or thread_name, c_id, c_info.get("starter_id", msg_id)
+
+    # 3. Attempt to create the thread directly from msg_id
     if msg_id:
         try:
             thread_obj = api_request(
@@ -146,8 +159,17 @@ def create_thread_for_general_message(token, general_channel_id, msg, author_id,
                 thread_id = thread_obj.get("id")
         except Exception as e:
             log_message(f"Failed to create thread on msg {msg_id}: {e}")
+            # If creation failed because a thread already exists on msg_id (HTTP 400), fetch it
+            try:
+                ch_check = api_request(token, "GET", f"/channels/{msg_id}")
+                if ch_check and ch_check.get("id") and ch_check.get("type") in (11, 12):
+                    thread_id = ch_check.get("id")
+                    thread_name = ch_check.get("name") or thread_name
+            except Exception:
+                pass
 
-    if not thread_id:
+    # 4. Only use fallback banner if msg_id genuinely cannot support a thread and no thread exists
+    if not thread_id and not msg_id:
         starter_banner = (
             f"🧵 **محادثة جديدة بدأها <@{author_id}>:** **{short_title}** (`{new_conv_id[:6]}`)"
             if is_ar
@@ -360,6 +382,13 @@ def handle_builtin_command(token, general_channel_id, cid, author_id, username, 
         log_message(f"Handled sh command ({arg[:40]}) in {cid} from {username}")
         return True
 
+    # 16. Claude Code Remote Control (!claude / !remote)
+    if cmd in ("claude", "remote", "rc", "كلود", "التحكم"):
+        reply = discord_manager.get_claude_remote_report(arg, lang=lang)
+        discord_hook.send_discord_rich(token, cid, reply, is_user_prompt=False)
+        log_message(f"Handled claude remote command ({arg[:40]}, lang={lang}) in {cid} from {username}")
+        return True
+
     return False
 
 
@@ -375,8 +404,6 @@ def main():
         print("Error: Missing bot_token or channel_id in discord_config.json", file=sys.stderr)
         sys.exit(1)
 
-    state = load_json(LISTENER_STATE_FILE, {})
-
     lock_file = os.path.join(CONFIG_DIR, "discord_listener.lock")
     try:
         lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR, 0o666)
@@ -389,12 +416,18 @@ def main():
     except Exception as e:
         log_message(f"Lock exception: {e}")
 
+    # Always load state AFTER acquiring the lock to guarantee freshness
+    state = load_json(LISTENER_STATE_FILE, {})
+
     log_message(f"Discord listener started (conv_id={conv_id}, is_agent_task={is_agent_task})")
     last_archive_sync = 0.0
+    _round_robin_idx = 0
 
     _err_streak = 0
     while True:
         try:
+            # Re-read state from disk on each loop iteration to catch concurrent updates
+            state = load_json(LISTENER_STATE_FILE, state)
             now = time.time()
             # Periodically run two-way archive sync every 25 seconds
             if now - last_archive_sync >= 25.0:
@@ -408,24 +441,36 @@ def main():
             channels_to_poll = [general_channel_id]
             if threads.get("active_thread_id") and threads["active_thread_id"] not in channels_to_poll:
                 channels_to_poll.append(threads["active_thread_id"])
-            for info in threads.values():
-                if isinstance(info, dict) and info.get("thread_id"):
-                    if info.get("archived") and info.get("thread_id") != threads.get("active_thread_id"):
-                        continue
-                    t_id = info["thread_id"]
-                    if t_id not in channels_to_poll:
-                        channels_to_poll.append(t_id)
 
-            if guild_id and int(now) % 10 < 3:
-                try:
-                    act_res = api_request(token, "GET", f"/guilds/{guild_id}/threads/active")
-                    for t_obj in (act_res or {}).get("threads", []):
-                        if t_obj.get("parent_id") == general_channel_id:
-                            tid = t_obj.get("id")
-                            if tid and tid not in channels_to_poll:
-                                channels_to_poll.append(tid)
-                except Exception:
-                    pass
+            # Sort active threads by most recent conversations first
+            active_tids = []
+            try:
+                convs = discord_manager.list_all_conversations(include_archived=True)
+                for c in convs:
+                    cid_val = c.get("id")
+                    if cid_val in threads and isinstance(threads[cid_val], dict):
+                        t_obj = threads[cid_val]
+                        if not t_obj.get("archived") and t_obj.get("thread_id"):
+                            tid_cand = t_obj["thread_id"]
+                            if tid_cand not in active_tids:
+                                active_tids.append(tid_cand)
+            except Exception:
+                for info in threads.values():
+                    if isinstance(info, dict) and info.get("thread_id") and not info.get("archived"):
+                        active_tids.append(info["thread_id"])
+
+            # Top 3 active threads are polled every single cycle for instant (<1s) mobile response
+            MAX_LISTEN_ACTIVE_THREADS = 3
+            for t_id in active_tids[:MAX_LISTEN_ACTIVE_THREADS]:
+                if t_id not in channels_to_poll:
+                    channels_to_poll.append(t_id)
+
+            # Round-robin 1 thread from the remaining visible threads (up to 15) so they remain monitored without adding polling weight
+            remaining_tids = [t for t in active_tids[MAX_LISTEN_ACTIVE_THREADS:15] if t not in channels_to_poll]
+            if remaining_tids:
+                rr_tid = remaining_tids[_round_robin_idx % len(remaining_tids)]
+                channels_to_poll.append(rr_tid)
+                _round_robin_idx += 1
 
             for cid in channels_to_poll:
                 last_msg_id = state.get(cid)

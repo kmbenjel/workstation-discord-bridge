@@ -2,13 +2,19 @@
 
 <div align="center">
 
-**Two-Way Autonomous Agent Steering, Mobile Supervison & Remote Linux Operations**
+**Two-Way Autonomous Agent Steering, Mobile Supervision & Claude Code Remote Control**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Linux](https://img.shields.io/badge/Linux-Workstation-fcc624?style=for-the-badge&logo=linux&logoColor=black)](https://kernel.org)
 [![Discord](https://img.shields.io/badge/Discord-Gateway%20v10-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
 [![Antigravity](https://img.shields.io/badge/Antigravity-Desktop%20%26%20CLI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://github.com/google)
-[![Architecture](https://img.shields.io/badge/Architecture-Event--Driven%20Hooks-10b981?style=for-the-badge)](https://github.com/kmbenjel/workstation-discord-bridge)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-Remote%20Control%20(/rc)-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://claude.ai)
+
+<br>
+
+<img src="docs/screenshots/hero_agent_steering_demo.webp" width="880" alt="Workstation Discord Bridge Animated Demo">
+
+*Real-time two-way mobile steering over Google Antigravity & Claude Code Remote Control from Discord mobile*
 
 </div>
 
@@ -16,21 +22,29 @@
 
 ## 📌 Executive Summary
 
-**Workstation Discord Bridge** is a production-grade, bi-directional operations bridge connecting an active Linux development workstation to Discord. It enables full, low-latency mobile supervision and steering over autonomous AI developer sessions (Google Antigravity Desktop & CLI, Claude Desktop & Claude Code), long-running background tasks, system resources, and shell operations directly from a mobile smartphone without needing a clunky remote desktop client.
+**Workstation Discord Bridge** is a production-grade, bi-directional operations bridge connecting an active Linux development workstation to Discord. It enables full, low-latency mobile supervision and steering over autonomous AI developer sessions (Google Antigravity Desktop & CLI, Claude Desktop & Claude Code Native), long-running background tasks, system resources, and shell operations directly from a mobile smartphone without needing a clunky remote desktop client.
 
-Whether commuting, away from the desk, or monitoring overnight builds, you can **launch and run Antigravity and Claude Desktop sessions**, **activate remote control on Claude** to seamlessly hand off and continue development on mobile, manage background processes, and inspect live hardware telemetry — all directly using Discord messages.
+Whether commuting, away from the desk, or monitoring overnight builds, you can **launch and steer Antigravity sessions**, **activate Claude Code Remote Control (`/rc active`)**, inspect live multi-model quotas, search through archives of previous sessions, manage background processes, and inspect live hardware telemetry — all directly using mobile Discord messages.
+
+<div align="center">
+
+<img src="docs/screenshots/desktop_mobile_bridge_dual.png" width="950" alt="Workstation Desktop and Discord Mobile Bridge">
+
+*Dual View: Linux workstation terminal with Claude Code Opus 5.5 `/rc active` (left) synced live with Discord mobile client (right)*
+
+</div>
 
 ---
 
 ## 🏗️ Architecture & Data Flow
 
-The bridge decouples **inbound mobile commands** (polled via high-frequency resilient listener) from **outbound agent responses** (triggered deterministically via lifecycle hooks), ensuring zero blocking on the agent runtime and instant event dispatching.
+The bridge decouples **inbound mobile commands** (polled via a high-frequency, resilient listener with 15 synchronized active threads) from **outbound agent responses** (triggered deterministically via lifecycle hooks), ensuring zero blocking on the agent runtime and instant event dispatching.
 
 ```mermaid
 flowchart TB
     subgraph Mobile ["📱 Mobile Device (Discord App)"]
-        UserPrompt["User Prompt / Command (!status, !sh, Prompt)"]
-        MobileThread["Active Thread / Dedicated Topic"]
+        UserPrompt["User Prompt / Command (!claude, !models, !search, Prompt)"]
+        MobileThread["Active Synchronized Thread (15 Visible)"]
     end
 
     subgraph DiscordCloud ["☁️ Discord Cloud Gateway (v10 API)"]
@@ -39,13 +53,14 @@ flowchart TB
 
     subgraph Workstation ["💻 Linux Workstation (khalid)"]
         subgraph InboundPipeline ["Inbound Command & Dispatch Loop"]
-            Listener["discord_listener.py\n(Async Poller & Router)"]
+            Listener["discord_listener.py\n(Sub-second Poller & Router)"]
             Manager["discord_manager.py\n(Session & Process Controller)"]
         end
 
         subgraph CoreRuntimes ["Execution Runtimes"]
             AntigravityLS["Antigravity Language Server\n(Port + CSRF Auto-Discovery)"]
             AgyCLI["Antigravity CLI (agy)\nHeadless Agent Sessions"]
+            ClaudeRemote["Claude Code Native\n(tmux: claude-remote /rc active)"]
             ShellWorker["Subprocess Worker\n(System Commands & Diagnostics)"]
         end
 
@@ -56,7 +71,7 @@ flowchart TB
 
         subgraph Storage ["Persistent State & Brain"]
             Brain["~/.gemini/antigravity/brain/\n(Transcripts & Artifacts)"]
-            ThreadsJSON["discord_threads.json\n(Bidirectional Thread Map)"]
+            ThreadsJSON["discord_threads.json\n(Top 15 Active Sync Map)"]
         end
     end
 
@@ -66,12 +81,14 @@ flowchart TB
     Listener -->|Route action| Manager
     Manager -->|agentapi / IPC| AntigravityLS
     Manager -->|Spawn / Attach| AgyCLI
+    Manager -->|tmux send-keys| ClaudeRemote
     Manager -->|Exec| ShellWorker
     Manager -->|Query state| StatusGen
 
     %% Outbound Flow
     AntigravityLS -->|Write state| Brain
     AgyCLI -->|Write state| Brain
+    ClaudeRemote -->|TUI Socket / Web Bridge| Gateway
     Brain -->|Trigger Stop hook| Hook
     Hook -->|Read thread map| ThreadsJSON
     Hook -->|Post structured response| Gateway
@@ -81,72 +98,81 @@ flowchart TB
 
 ---
 
-## 🔄 Sequence Diagram: Interactive Agent Steering Lifecycle
+## ⚡ Core Capabilities & Technical Highlights
 
-The sequence below illustrates how an incoming prompt or command sent from Discord mobile is dispatched to an AI agent session on the workstation, executed, and synced back to the matching mobile Discord thread:
+### 1. Claude Code Native Remote Control (`!claude` / `!remote`)
+- **Direct Remote Bridge Connection**: Automatically hooks into Claude Code's native remote session (`/rc active`) running inside tmux session `claude-remote`.
+- **Direct Web & Mobile App Links**: Returns the live session URL (`https://claude.ai/code/session_...`) allowing one-tap handoff to the official Claude iOS/Android app with full interactive TUI streaming.
+- **Terminal Mirroring**: Inspect live terminal outputs directly inside Discord using `!claude pane` or `!claude log`.
+- **Bidirectional Prompt Piping**: Send `!claude <prompt>` from Discord to pipe commands directly into the active Claude Code process.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Dev as 📱 Developer (Discord Mobile)
-    participant DC as ☁️ Discord API (Channels/Threads)
-    participant L as 🎧 discord_listener.py
-    participant M as ⚙️ discord_manager.py
-    participant AG as 🤖 Antigravity / Agy CLI
-    participant H as 🪝 discord_hook.py
-    participant FS as 🗄️ Brain / Filesystem
+### 2. Multi-Model AI Quota & Rate Limit Monitor (`!models` / `!quota`)
+- **Live Desktop Language Server Queries**: Queries Desktop LS `GetUserStatus` in real time to fetch accurate remaining quota percentages and UTC reset schedules.
+- **Family Pooling Awareness**: Correctly groups models sharing common quota pools (Gemini 3.8 Flash, Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B, Gemini 4 Argon).
+- **Sub-Second Reporting**: Instant response latency (<1s) directly inside your active mobile thread.
 
-    Dev->>DC: Send prompt in #general or project thread
-    DC-->>L: Inbound message detected (poll loop)
-    L->>L: Parse command or natural language prompt
-    alt Bang Command (!status, !running, !models, !sh)
-        L->>M: Execute command handler
-        M->>DC: Reply directly with hardware / process report
-    else Agent Prompt
-        L->>M: Resolve or launch target session (Desktop or CLI)
-        M->>AG: Dispatch prompt via agentapi (CSRF authenticated)
-        AG->>FS: Run tool calls, edit files, update transcript
-        AG-->>H: Trigger 'Stop' lifecycle hook on turn completion
-        H->>FS: Read latest transcript steps & generated artifacts
-        H->>H: Format markdown, isolate Bidi/RTL & code blocks
-        H->>DC: Post response chunks & attach diff/media artifacts
-        DC-->>Dev: Push notification & render formatted response
-    end
-```
+### 3. Top 15 Active Conversation Sync & Instant Search (`!search`)
+- **Dynamic Thread Management**: Automatically maintains the top 15 most recent conversations as unarchived, active Discord threads while indexing older sessions.
+- **Instant Full-Text Search**: Run `!search <query>` from Discord mobile to search across titles, prompts, and turns of all past sessions without opening the desktop GUI.
+- **Sub-Second Polling Cycle**: High-priority polling on the top active threads guarantees sub-second responsiveness without API rate limits.
+
+### 4. Arabic & Bidirectional Text Perfection (Bidi / RTL)
+- **Automatic Language Detection**: Detects Arabic input and wraps markdown output in `<div dir="rtl">` containers.
+- **Strict Bidi Isolation**: Automatically wraps English technical terms, version strings, numbers, and file paths in Unicode Bidi isolation markers (`\u200f` and `\u200e`) so punctuation and dashes never invert.
+- **Monospace Code Preservation**: Preserves terminal output, bash commands, and JSON blocks in isolated left-aligned code fences.
 
 ---
 
-## ⚡ Core Capabilities & Technical Highlights
+## 📱 Mobile Command Reference
 
-### 1. Antigravity & Claude Desktop Orchestration with Mobile Remote Control
-- **Launch & Steer Desktop Sessions**: Trigger, steer, and interact with Google Antigravity Desktop IDE sessions and Claude Desktop runs directly through Discord chat messages.
-- **Claude Remote Control Handoff**: Activate remote control mode on Claude via Discord commands, seamlessly handing off active desktop coding sessions to continue steering and reviewing on mobile without missing a beat.
-- **Dynamic Port & Token Discovery**: `discord_manager.py` inspects active Linux process trees (`ps -ef`), extracts the dynamic language server port and CSRF authentication token from `/proc/<pid>/cmdline`, and automatically handles authentication without static passwords.
-- **Headless Auto-Launch & CLI Fallback**: If the Desktop IDE is closed, the manager can auto-launch it in a headless display environment or gracefully divert the task to `/home/k/.local/bin/agy` CLI.
-- **Bi-directional Symlink Mesh**: Automatically unifies conversation histories across Desktop (`~/.gemini/antigravity/brain`) and CLI (`~/.gemini/antigravity-cli/brain`), allowing you to inspect CLI runs from Desktop and vice versa.
-
-### 2. Comprehensive Mobile Command Suite
-From your phone's Discord client, send commands to control the machine:
+Send any of the following commands from Discord mobile to supervise and control the host workstation:
 
 | Command | Action & Output |
 |---|---|
-| `!status` | Full workstation telemetry: CPU load, RAM usage, swap, battery level, temperature, and disk space. |
-| `!running` | Live list of active background workers, systemd services, and long-running scripts. |
-| `!sessions` | List active, recent, and archived agent sessions across Desktop and CLI. |
-| `!models` / `!quota` | Inspect available Gemini / Claude / local models and current rate limits / quotas. |
-| `!stop` / `!cancel` | Terminate stuck subagents, background builds, or endless tool loops immediately. |
-| `!fork` | Fork an existing conversation into an isolated branch thread for exploratory debugging. |
-| `!sh <command>` | Execute raw Linux shell commands with output returned directly to Discord. |
-| `!cli <prompt>` | Launch a dedicated headless CLI agent turn and stream output to a new thread. |
+| `!claude` / `!remote` | Claude Code Remote Control status, active model, direct mobile app link, and working directory. |
+| `!claude pane` | Capture and display the live 20-line tmux terminal mirror from Claude Code. |
+| `!claude <prompt>` | Pipe a command or prompt directly into the active Claude Code session. |
+| `!models` / `!quota` | Live multi-model quota monitor: remaining percentages, shared pools, and UTC reset times. |
+| `!search <query>` | Instant full-text search across all previous desktop and CLI conversations. |
+| `!status` | Full workstation telemetry: CPU load, RAM usage, thermals, battery level, and disk space. |
+| `!running` / `!sessions` | Control center displaying running background tasks, active cascades, and CLI processes. |
+| `!stop` / `!cancel` | Terminate stuck subagents, background builds, or runaway loops immediately. |
+| `!fork` | Fork the current conversation into an isolated new branch thread for exploratory debugging. |
+| `!sh <command>` | Execute raw Linux bash commands on the host workstation with formatted output. |
+| `!cli <prompt>` | Launch a headless `agy` CLI turn in the background and stream output to Discord. |
+| `!chats [page]` | Paginated catalog of all past conversations across Desktop and CLI. |
 
-### 3. Arabic & Bidirectional Text Perfection (Bidi / RTL)
-- Built-in heuristics format Arabic prose with proper Unicode directionality containers (`<div dir="rtl">`).
-- English technical terms, version strings, numbers, and file paths are isolated with `<bdi dir="ltr">` so punctuation never reverses.
-- Terminal outputs, code snippets, and JSON blocks are locked to strict `dir="ltr"` and left alignment.
+---
 
-### 4. Zero-Leak Secret Isolation
-- Sensitive credentials (`bot_token`, `guild_id`, `channel_id`, `user_id`) are stored in `discord_config.json` with `chmod 600` permissions and never tracked by Git.
-- Multi-process lockfiles (`fcntl.flock`) prevent race conditions between simultaneous hook executions and listener cycles.
+## 📸 Real Mobile Supervision Showcase
+
+All screenshots below are captured directly from the authentic Discord mobile web app client under iPhone 14 Pro emulation:
+
+<div align="center">
+
+| 🎛️ Claude Code Remote Control (`!claude`) | 🧠 AI Models Quota Monitor (`!models`) |
+|:---:|:---:|
+| <img src="docs/screenshots/claude_remote_control.png" width="370" alt="Claude Code Remote Control"> <br> *Direct bridge URL for Claude iOS/Android app, working directory, and live steering* | <img src="docs/screenshots/ai_models_quota_check.png" width="370" alt="AI Models Quota Monitor"> <br> *Real-time quota percentage check across Gemini 3.8 Flash, Opus 5.5, Sonnet 5.5, and Argon* |
+
+<br>
+
+| 🌐 Arabic RTL & Bidi Perfection (`كلود`) | 🔍 Conversation Archive Search (`!search`) |
+|:---:|:---:|
+| <img src="docs/screenshots/arabic_rtl_bidi_perfection.png" width="370" alt="Arabic RTL & Bidi Perfection"> <br> *Arabic language detection with Unicode Bidi isolation markers for all Latin symbols* | <img src="docs/screenshots/conversation_archive_search.png" width="370" alt="Conversation Archive Search"> <br> *Instant full-text query across past session titles and turns with direct thread links* |
+
+<br>
+
+| 🧵 Discord Threads Sidebar Sync (Top 15) | 📱 Autonomous Agent Steering Turn |
+|:---:|:---:|
+| <img src="docs/screenshots/discord_threads_sidebar_sync.png" width="370" alt="Discord Threads Sidebar Sync"> <br> *Top 15 active conversations synchronized under `#general` with older ones indexed* | <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Autonomous Agent Steering Turn"> <br> *Multi-turn autonomous coding execution with turn status pills and review cards* |
+
+<br>
+
+| 🛑 Emergency Process Cancellation (`!stop`) | 💻 Raw Shell Execution (`!sh`) |
+|:---:|:---:|
+| <img src="docs/screenshots/emergency_process_cancellation.png" width="370" alt="Emergency Process Cancellation"> <br> *Instant termination of runaway cascades and background workers via `!stop`* | <img src="docs/screenshots/raw_shell_execution.png" width="370" alt="Raw Shell Execution"> <br> *Direct Linux shell command execution returned with formatted terminal styling* |
+
+</div>
 
 ---
 
@@ -154,17 +180,19 @@ From your phone's Discord client, send commands to control the machine:
 
 ```
 workstation-discord-bridge/
-├── discord_manager.py          # Session controller, agentapi client, and process manager
-├── discord_listener.py         # Polling loop for Discord messages, threads, and bang commands
+├── discord_manager.py          # Session controller, Claude remote bridge, and quota manager
+├── discord_listener.py         # Sub-second message poller, 15-thread sync router, and command dispatcher
 ├── discord_hook.py             # Antigravity Stop hook: formats & transmits responses to Discord
 ├── discord_status.py           # Hardware, systemd, and pipeline telemetry collector
 ├── discord_send.py             # Standalone CLI utility to send messages to Discord
 ├── hooks.json.example          # Sample Antigravity hooks configuration
 ├── discord_config.example.json # Safe configuration schema template
 ├── requirements.txt            # Python dependencies
+├── docs/
+│   └── screenshots/            # Verified visual assets, dual frames, and animated demo
 ├── systemd/
-│   └── discord-listener.service# Systemd service unit for 24/7 background operation
-└── README.md                   # This documentation
+│   └── discord-listener.service# Systemd user service unit for 24/7 background operation
+└── README.md                   # Complete architectural and operations documentation
 ```
 
 ---
@@ -172,9 +200,10 @@ workstation-discord-bridge/
 ## 🚀 Setup & Installation
 
 ### 1. Prerequisites
-- Linux OS (tested on Ubuntu / Debian / Fedora)
+- Linux Workstation (Ubuntu / Debian / Fedora)
 - Python 3.10+
 - A Discord Bot with Message Content Intent enabled ([Discord Developer Portal](https://discord.com/developers))
+- Claude Code Native (`npm install -g @anthropic-ai/claude-code`) or Google Antigravity
 
 ### 2. Configuration
 Clone the repository and prepare your private config:
@@ -198,7 +227,7 @@ Edit `discord_config.json`:
 ```
 
 ### 3. Antigravity Hook Integration
-Add the hook to your Antigravity hooks file (`~/.gemini/config/hooks.json` or project hooks):
+Add the hook to your Antigravity hooks file (`~/.gemini/config/hooks.json`):
 ```json
 {
   "discord-reply-sync": {
@@ -229,28 +258,6 @@ journalctl --user -u discord-listener.service -f
 
 ---
 
-## 📸 Mobile Supervision & Live Agent Steering Showcase
-
-<div align="center">
-
-| 📱 Mobile Agent Steering & Desktop Sessions | ⚡ Live Telemetry & Process Check |
-|:---:|:---:|
-| <img src="docs/screenshots/mobile_agent_steering.png" width="360" alt="Mobile Agent Steering & Desktop Sessions"> <br> *Run Antigravity & Claude Desktop sessions, activate remote steering, and review turns directly from mobile Discord* | <img src="docs/screenshots/live_telemetry_check.png" width="360" alt="Live Telemetry & Process Check"> <br> *Live `!status` hardware health, CPU/RAM load, thermals, and background service metrics* |
-
-</div>
-
-<br>
-
-<div align="center">
-
-| 🛑 Emergency Process Cancellation | 💻 Raw Shell Execution (`!sh`) |
-|:---:|:---:|
-| <img src="docs/screenshots/emergency_process_cancellation.png" width="360" alt="Emergency Process Cancellation"> <br> *Instant termination of stuck subagents and runaway loops via `!stop`* | <img src="docs/screenshots/raw_shell_execution.png" width="360" alt="Raw Shell Execution"> <br> *Direct Linux bash command execution returned with formatted terminal styling* |
-
-</div>
-
----
-
 ## 📄 License & Credits
 
-Built by [Khalid Benjelloun](https://benjelloun.dev) with [Google Antigravity](https://github.com/google). MIT License.
+Built by [Khalid Benjelloun](https://benjelloun.dev) with [Google Antigravity](https://github.com/google) and [Claude Code](https://claude.ai). MIT License.

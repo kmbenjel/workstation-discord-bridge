@@ -18,6 +18,7 @@ Discord Manager & Max-Power Session Controller for Antigravity (Desktop & CLI):
 import os
 import re
 import sys
+import glob
 import time
 import json
 import shutil
@@ -1041,6 +1042,68 @@ def read_and_post_conversation_to_discord(token, general_channel_id, source_chan
 # 4. Bi-Directional Archive Synchronization (Antigravity <-> Discord)
 # ─────────────────────────────────────────────────────────────────────────────
 
+MAX_ACTIVE_DISCORD_THREADS = 15
+
+
+def prune_discord_threads_to_limit(token, max_active=MAX_ACTIVE_DISCORD_THREADS):
+    """
+    Enforces that at most `max_active` threads (the most recent conversations) remain active on Discord.
+    Any older active threads beyond the top `max_active` are archived on Discord so they don't clutter
+    the sidebar or cause heavy polling loads, but remain 100% searchable via Discord search, !search,
+    !chats, and !read.
+    """
+    try:
+        threads = load_json(THREADS_FILE, {})
+        arch_state = load_json(ARCHIVE_STATE_FILE, {})
+        convs = list_all_conversations(include_archived=True)
+        cids_with_threads = [
+            c["id"] for c in convs
+            if c["id"] in threads and isinstance(threads.get(c["id"]), dict) and threads[c["id"]].get("thread_id")
+        ]
+        keep_ids = set(cids_with_threads[:max_active])
+        changed = False
+
+        # Ensure top `max_active` threads are unarchived on Discord and active locally
+        for cid in list(keep_ids):
+            tinfo = threads.get(cid)
+            if not tinfo or not tinfo.get("thread_id"):
+                continue
+            tid = tinfo["thread_id"]
+            if tinfo.get("archived") is not False:
+                try:
+                    discord_api(token, "PATCH", f"/channels/{tid}", {"archived": False, "auto_archive_duration": 10080})
+                    tinfo["archived"] = False
+                    arch_state[cid] = False
+                    set_conv_archived_locally(cid, False)
+                    changed = True
+                    time.sleep(0.3)
+                except Exception:
+                    pass
+
+        # Archive any active thread beyond `max_active`
+        for cid in cids_with_threads[max_active:]:
+            tinfo = threads.get(cid)
+            if not tinfo or not tinfo.get("thread_id"):
+                continue
+            tid = tinfo["thread_id"]
+            if tinfo.get("archived") is not True:
+                try:
+                    discord_api(token, "PATCH", f"/channels/{tid}", {"archived": True})
+                    tinfo["archived"] = True
+                    arch_state[cid] = True
+                    set_conv_archived_locally(cid, True)
+                    changed = True
+                    time.sleep(0.2)
+                except Exception:
+                    pass
+
+        if changed:
+            save_json(THREADS_FILE, threads)
+            save_json(ARCHIVE_STATE_FILE, arch_state)
+    except Exception:
+        pass
+
+
 def _is_discord_auto_archive(ch_info):
     """Heuristic: archived roughly `auto_archive_duration` minutes after the last message => Discord inactivity auto-archive."""
     try:
@@ -1088,94 +1151,17 @@ def sync_archives(token, general_channel_id, guild_id=None):
         threads_changed = False
         arch_changed = False
 
-        archived_convs = list_all_conversations(include_archived=True, only_archived=True)
-        config = load_json(CONFIG_FILE, {})
-        user_id = config.get("user_id")
+        # Only sync the top MAX_ACTIVE_DISCORD_THREADS (15) active threads to prevent rate limiting or loop latency
+        convs = list_all_conversations(include_archived=True)
+        cids_with_threads = [
+            c["id"] for c in convs
+            if c["id"] in threads and isinstance(threads.get(c["id"]), dict) and threads[c["id"]].get("thread_id")
+        ]
+        active_sync_cids = set(cids_with_threads[:MAX_ACTIVE_DISCORD_THREADS])
 
-        for c in archived_convs:
-            cid = c["id"]
-            if cid not in threads or not isinstance(threads.get(cid), dict) or not threads[cid].get("thread_id"):
-                title = c["title"]
-                thread_name = f"🗄️ {title}"[:95]
-                is_ar = discord_hook.is_arabic_text(title)
-                starter_msg = (
-                    f"🗄️ **محادثة مؤرشفة من سطح المكتب:** **{title}** (`{cid[:8]}` — `{c['steps']}` خطوة — `{c['modified']}`)"
-                    if is_ar
-                    else f"🗄️ **Archived Conversation:** **{title}** (`{cid[:8]}` — `{c['steps']}` steps — `{c['modified']}`)"
-                )
-                try:
-                    starter = discord_api(
-                        token,
-                        "POST",
-                        f"/channels/{general_channel_id}/messages",
-                        {"content": starter_msg},
-                    )
-                    starter_id = starter.get("id")
-                    if starter_id:
-                        t_obj = discord_api(
-                            token,
-                            "POST",
-                            f"/channels/{general_channel_id}/messages/{starter_id}/threads",
-                            {"name": thread_name, "auto_archive_duration": 1440},
-                        )
-                        tid = t_obj.get("id")
-                        if tid:
-                            threads[cid] = {
-                                "thread_id": tid,
-                                "title": thread_name,
-                                "starter_id": starter_id,
-                                "last_author_id": user_id,
-                                "archived": True,
-                            }
-                            arch_state[cid] = True
-                            save_json(THREADS_FILE, threads)
-                            save_json(ARCHIVE_STATE_FILE, arch_state)
-
-                            turns = extract_conversation_turns(cid)
-                            if is_ar:
-                                summary_lines = [
-                                    f"🗄️ **هذه المحادثة مؤرشفة في Antigravity (`{cid}`)**",
-                                    f"- **العنوان**: {title}",
-                                    f"- **عدد الخطوات**: `{c['steps']}` | **آخر تعديل**: `{c['modified']}`",
-                                    f"- لقراءة كامل السجل أرسل `!read all` هنا، أو أرسل أي رسالة لاستئنافها.",
-                                ]
-                                if turns:
-                                    first_u = next((t[2] for t in turns if t[0] == "USER"), "")
-                                    last_a = next((t[2] for t in reversed(turns) if t[0] == "AGENT"), "")
-                                    if first_u:
-                                        summary_lines.append(f"\n**أول طلب في المحادثة:**\n> {first_u[:350].replace(chr(10), ' ')}")
-                                    if last_a:
-                                        summary_lines.append(f"\n**آخر رد في المحادثة:**\n{last_a[:800]}")
-                            else:
-                                summary_lines = [
-                                    f"🗄️ **Archived Antigravity Conversation (`{cid}`)**",
-                                    f"- **Title**: {title}",
-                                    f"- **Steps**: `{c['steps']}` | **Last Modified**: `{c['modified']}`",
-                                    f"- Send `!read all` here to load the full transcript, or send any message to unarchive and resume.",
-                                ]
-                                if turns:
-                                    first_u = next((t[2] for t in turns if t[0] == "USER"), "")
-                                    last_a = next((t[2] for t in reversed(turns) if t[0] == "AGENT"), "")
-                                    if first_u:
-                                        summary_lines.append(f"\n**Initial Prompt:**\n> {first_u[:350].replace(chr(10), ' ')}")
-                                    if last_a:
-                                        summary_lines.append(f"\n**Latest Response:**\n{last_a[:800]}")
-
-                            discord_hook.send_discord_rich(
-                                token, tid, "\n".join(summary_lines), is_user_prompt=False, ping_user=False
-                            )
-                            discord_api(token, "PATCH", f"/channels/{tid}", {"archived": True})
-                            if turns:
-                                max_step = max(t[1] for t in turns if isinstance(t[1], int))
-                                st = load_json(STATE_FILE, {})
-                                st[cid] = max(st.get(cid, -1), max_step)
-                                save_json(STATE_FILE, st)
-                            time.sleep(0.5)
-                except Exception:
-                    pass
-
-        for cid, info in list(threads.items()):
-            if not isinstance(info, dict) or not info.get("thread_id") or len(cid) < 32:
+        for cid in active_sync_cids:
+            info = threads.get(cid)
+            if not isinstance(info, dict) or not info.get("thread_id"):
                 continue
             tid = info["thread_id"]
             local_arch = is_conv_archived_locally(cid)
@@ -1232,13 +1218,25 @@ def sync_archives(token, general_channel_id, guild_id=None):
                     except Exception:
                         pass
                 elif remote_arch != prev_known and local_arch == prev_known:
+                    convs = list_all_conversations(include_archived=True)
+                    cids_with_threads = [
+                        c["id"] for c in convs
+                        if c["id"] in threads and isinstance(threads.get(c["id"]), dict) and threads[c["id"]].get("thread_id")
+                    ]
+                    # If this is among the top MAX_ACTIVE_DISCORD_THREADS, ensure it stays unarchived
+                    if cid in cids_with_threads[:MAX_ACTIVE_DISCORD_THREADS]:
+                        if remote_arch:
+                            try:
+                                discord_api(token, "PATCH", f"/channels/{tid}", {"archived": False, "auto_archive_duration": 10080})
+                                info["archived"] = False
+                                threads_changed = True
+                                arch_state[cid] = False
+                                arch_changed = True
+                            except Exception:
+                                pass
+                        continue
+
                     if remote_arch and _is_discord_auto_archive(ch_info):
-                        # Discord hid the thread for inactivity -- NOT a user archive. Keep Desktop untouched
-                        # and revive the thread so it doesn't vanish from the channel list.
-                        try:
-                            discord_api(token, "PATCH", f"/channels/{tid}", {"archived": False, "auto_archive_duration": 10080})
-                        except Exception:
-                            pass
                         continue
                     set_conv_archived_locally(cid, bool(remote_arch))
                     info["archived"] = bool(remote_arch)
@@ -1253,6 +1251,9 @@ def sync_archives(token, general_channel_id, guild_id=None):
             save_json(THREADS_FILE, threads)
         if arch_changed:
             save_json(ARCHIVE_STATE_FILE, arch_state)
+
+        # Enforce that only the top 15 most recent threads remain active in Discord
+        prune_discord_threads_to_limit(token, MAX_ACTIVE_DISCORD_THREADS)
     finally:
         if lock_fd is not None:
             try:
@@ -1837,6 +1838,124 @@ def run_shell_command(raw_cmd, lang="en"):
         return f"⚠️ **Command failed:** `{e}`"
 
 
+def get_claude_remote_report(arg="", lang="en"):
+    """
+    Checks or steers Claude Code remote control session.
+    - If no arg or 'status': reports Claude Code session status, remote bridge URL, model, and steering instructions.
+    - If 'pane' or 'log': shows last 20 lines of tmux pane.
+    - If 'start': starts a new claude tmux session if none is active.
+    - If 'stop': terminates the claude tmux session.
+    - Otherwise: sends prompt text to Claude Code via tmux send-keys.
+    """
+    ar = lang == "ar"
+    tmux_session = "claude-remote"
+    res = subprocess.run(["tmux", "has-session", "-t", tmux_session], capture_output=True)
+    is_running = (res.returncode == 0)
+
+    active_session = None
+    for p in glob.glob(os.path.expanduser("~/.claude/sessions/*.json")):
+        try:
+            with open(p) as f:
+                d = json.load(f)
+                if d.get("bridgeSessionId") or (d.get("tmux") and tmux_session in d.get("tmux")):
+                    active_session = d
+                    break
+        except Exception:
+            pass
+
+    clean_arg = (arg or "").strip()
+    norm_arg = clean_arg.lower()
+
+    if norm_arg in ("start", "تشغيل"):
+        if is_running:
+            return ("⚡ **جلسة كلود كود نشطة بالفعل!** أرسل `!claude` لعرض الرابط والتفاصيل." if ar
+                    else "⚡ **Claude Code session is already running!** Send `!claude` to view the link and details.")
+        subprocess.run(["tmux", "new-session", "-d", "-s", tmux_session, "cd /home/k/projects/workstation-discord-bridge && claude"])
+        time.sleep(2)
+        return ("🚀 **تم تشغيل جلسة Claude Code جديدة في الخلفية (`claude-remote`).** أرسل `!claude` لعرض الرابط والتفاصيل." if ar
+                else "🚀 **Started a new Claude Code session in tmux (`claude-remote`).** Send `!claude` for status and link.")
+
+    if norm_arg in ("stop", "kill", "ايقاف", "إيقاف", "إنهاء"):
+        if not is_running:
+            return ("ℹ️ لا توجد جلسة كلود كود نشطة لإيقافها." if ar else "ℹ️ No active Claude Code session to terminate.")
+        subprocess.run(["tmux", "kill-session", "-t", tmux_session])
+        return ("🛑 **تم إيقاف جلسة Claude Code بنجاح.**" if ar else "🛑 **Claude Code session terminated successfully.**")
+
+    if norm_arg in ("pane", "log", "logs", "شاشة", "سجل"):
+        if not is_running:
+            return ("⚠️ جلسة كلود كود غير نشطة. أرسل `!claude start` لتشغيلها." if ar else "⚠️ Claude Code is not running. Send `!claude start` to launch.")
+        try:
+            out = subprocess.run(["tmux", "capture-pane", "-pt", tmux_session, "-S", "-30"], capture_output=True, text=True, timeout=5).stdout
+            lines = [l for l in out.splitlines() if l.strip()]
+            preview = "\n".join(lines[-18:])
+            if ar:
+                return f"🖥️ **شاشة Claude Code الحالية (`{tmux_session}`):**\n```text\n{preview}\n```"
+            return f"🖥️ **Live Claude Code Pane (`{tmux_session}`):**\n```text\n{preview}\n```"
+        except Exception as e:
+            return f"⚠️ Error capturing pane: {e}"
+
+    if clean_arg and norm_arg not in ("status", "حالة", "info", "معلومات", "تقرير"):
+        if not is_running:
+            return ("⚠️ جلسة كلود كود غير نشطة لتمرير الأمر إليها. أرسل `!claude start` أولاً." if ar
+                    else "⚠️ Claude Code is not running. Send `!claude start` first.")
+        subprocess.run(["tmux", "send-keys", "-t", tmux_session, "-l", clean_arg])
+        subprocess.run(["tmux", "send-keys", "-t", tmux_session, "Enter"])
+        time.sleep(1.5)
+        try:
+            out = subprocess.run(["tmux", "capture-pane", "-pt", tmux_session, "-S", "-15"], capture_output=True, text=True, timeout=5).stdout
+            lines = [l for l in out.splitlines() if l.strip()]
+            preview = "\n".join(lines[-10:])
+        except Exception:
+            preview = ""
+        if ar:
+            return (f"📨 **تم إرسال الأمر إلى Claude Code بنجاح:**\n> `{clean_arg}`\n\n"
+                    f"🖥️ **المعاينة الفورية للشاشة:**\n```text\n{preview}\n```\n"
+                    f"💡 لمتابعة التفاعل الحي افتح تطبيق Claude للهاتف أو الرابط الرسمي.")
+        return (f"📨 **Prompt delivered to Claude Code session:**\n> `{clean_arg}`\n\n"
+                f"🖥️ **Live Screen Preview:**\n```text\n{preview}\n```\n"
+                f"💡 For full streaming interaction, check the Claude mobile app or web session.")
+
+    bridge_id = active_session.get("bridgeSessionId", "") if active_session else ""
+    cwd = active_session.get("cwd", "/home/k/projects/workstation-discord-bridge") if active_session else "/home/k/projects/workstation-discord-bridge"
+    status_str = active_session.get("status", "active") if active_session else ("running" if is_running else "offline")
+    remote_url = f"https://claude.ai/code/{bridge_id}" if bridge_id else "https://claude.ai/code"
+
+    lines = []
+    if ar:
+        lines.append("🎛️ **التحكم عن بُعد في كلود كود (Claude Code Remote Control)**")
+        lines.append("────────────────────────────")
+        lines.append("• **الحالة:** `🟢 نشط ومفعل (/rc active)`" if is_running else "• **الحالة:** `⚪ غير مشغّل (أرسل !claude start)`")
+        lines.append("• **المحطة المضيفة:** `khalid` (HP EliteBook 840 G6 · Linux)")
+        lines.append("• **إصدار كلود:** `Claude Code v2.1.285` (Opus 5.5 xhigh effort)")
+        lines.append(f"• **مجلد العمل:** `{cwd}`")
+        lines.append(f"• **جلسة tmux:** `{tmux_session}` (`{status_str}`)")
+        lines.append("────────────────────────────")
+        lines.append("🔗 **رابط التحكم والربط المباشر (تطبيق الهاتف والمتصفح):**")
+        lines.append(f"<{remote_url}>")
+        lines.append("────────────────────────────")
+        lines.append("📱 **التوجيه والتحكم عبر الهاتف:**")
+        lines.append("1. **عبر تطبيق Claude (iOS / Android):** تظهر الجلسة تلقائياً في قائمة الجلسات النشطة مع بث TUI حي.")
+        lines.append("2. **عبر ديسكورد مباشرة:** أرسل `!claude <أمرك أو سؤالك>` لإرساله فوراً للمحطة.")
+        lines.append("3. **معاينة الشاشة:** أرسل `!claude pane` لمشاهدة مخرجات الطرفية الحية.")
+    else:
+        lines.append("🎛️ **Claude Code Remote Control Center**")
+        lines.append("────────────────────────────")
+        lines.append("• **Status:** `🟢 Active (/rc active)`" if is_running else "• **Status:** `⚪ Offline (Send !claude start)`")
+        lines.append("• **Host Workstation:** `khalid` (HP EliteBook 840 G6 · Linux)")
+        lines.append("• **Engine:** `Claude Code v2.1.285` (Opus 5.5 xhigh effort)")
+        lines.append(f"• **Working Directory:** `{cwd}`")
+        lines.append(f"• **Tmux Session:** `{tmux_session}` (`{status_str}`)")
+        lines.append("────────────────────────────")
+        lines.append("🔗 **Direct Remote Bridge URL (Mobile App & Web):**")
+        lines.append(f"<{remote_url}>")
+        lines.append("────────────────────────────")
+        lines.append("📱 **Mobile Steering Options:**")
+        lines.append("1. **Claude Mobile App (iOS / Android):** Automatically appears in active sessions with full live TUI streaming.")
+        lines.append("2. **Direct from Discord:** Send `!claude <prompt>` to pipe commands directly into the terminal.")
+        lines.append("3. **Inspect Terminal:** Send `!claude pane` to capture current terminal screen.")
+    return "\n".join(lines)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Direct Prompt Dispatch via AgentAPI (With Headless CLI Fallback)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1966,6 +2085,7 @@ def get_help_report(lang="en"):
             "- `!stop [الرقم أو المعرف]` (أو `ايقاف`): إيقاف أي جلسة جارية أو عالقة فوراً.\n"
             "- `!fork [الرقم أو المعرف]` (أو `نسخ`): تفريع/نسخ أي محادثة إلى ثريد جديد مستقل.\n"
             "- `!models` (أو `النماذج`): عرض النماذج المتاحة ونسبة الحصة المتبقية لكل نموذج.\n"
+            "- `!claude` (أو `!remote`): التحكم الكامل عن بُعد في كلود كود (رابط الهاتف والمتصفح وتمرير الأوامر).\n"
             "- `!sh <أمر>` (أو `!cmd <أمر>`): تنفيذ أمر طرفية مباشر وعرض النتيجة.\n\n"
             "🗄️ **الأرشفة الثنائية وحالة النظام:**\n"
             "- `!archive [الرقم]` / `!unarchive [الرقم]`: أرشفة أو إلغاء أرشفة المحادثة في الحاسوب وديسكورد معاً.\n"
@@ -1988,6 +2108,7 @@ def get_help_report(lang="en"):
         "- `!stop [num|id]` (or `!cancel`) — Stop/cancel a running or stuck cascade on Desktop or CLI.\n"
         "- `!fork [num|id]` — Fork a conversation into a new branch thread.\n"
         "- `!models` (or `!quota`) — List all AI models with live remaining quota percentages and reset times.\n"
+        "- `!claude` (or `!remote`) — Claude Code Remote Control center (direct mobile link, status & tmux steering).\n"
         "- `!sh <command>` (or `!cmd`) — Execute a shell command on the host and return stdout/stderr.\n\n"
         "🗄️ **Two-Way Archive Sync & System Controls:**\n"
         "- `!archive [num|id]` / `!unarchive [num|id]` — Archive or unarchive on both Desktop & Discord.\n"
