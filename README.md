@@ -37,7 +37,7 @@ flowchart TB
         Gateway["Channels & Threads API"]
     end
 
-    subgraph Workstation ["💻 Linux Workstation (khalid-solar-void)"]
+    subgraph Workstation ["💻 Linux Workstation (khalid)"]
         subgraph InboundPipeline ["Inbound Command & Dispatch Loop"]
             Listener["discord_listener.py\n(Async Poller & Router)"]
             Manager["discord_manager.py\n(Session & Process Controller)"]
