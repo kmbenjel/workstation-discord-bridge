@@ -1048,9 +1048,8 @@ MAX_ACTIVE_DISCORD_THREADS = 15
 def prune_discord_threads_to_limit(token, max_active=MAX_ACTIVE_DISCORD_THREADS):
     """
     Enforces that at most `max_active` threads (the most recent conversations) remain active on Discord.
-    Any older active threads beyond the top `max_active` are archived on Discord so they don't clutter
-    the sidebar or cause heavy polling loads, but remain 100% searchable via Discord search, !search,
-    !chats, and !read.
+    Any older active threads beyond the top `max_active` are archived on Discord ONLY so they don't clutter
+    the Discord sidebar or cause heavy polling loads, without altering local Antigravity Desktop archive state.
     """
     try:
         threads = load_json(THREADS_FILE, {})
@@ -1063,7 +1062,7 @@ def prune_discord_threads_to_limit(token, max_active=MAX_ACTIVE_DISCORD_THREADS)
         keep_ids = set(cids_with_threads[:max_active])
         changed = False
 
-        # Ensure top `max_active` threads are unarchived on Discord and active locally
+        # Ensure top `max_active` threads are unarchived on Discord
         for cid in list(keep_ids):
             tinfo = threads.get(cid)
             if not tinfo or not tinfo.get("thread_id"):
@@ -1074,13 +1073,12 @@ def prune_discord_threads_to_limit(token, max_active=MAX_ACTIVE_DISCORD_THREADS)
                     discord_api(token, "PATCH", f"/channels/{tid}", {"archived": False, "auto_archive_duration": 10080})
                     tinfo["archived"] = False
                     arch_state[cid] = False
-                    set_conv_archived_locally(cid, False)
                     changed = True
                     time.sleep(0.3)
                 except Exception:
                     pass
 
-        # Archive any active thread beyond `max_active`
+        # Archive any active Discord thread beyond `max_active` (Discord-only, NEVER archive locally on Desktop)
         for cid in cids_with_threads[max_active:]:
             tinfo = threads.get(cid)
             if not tinfo or not tinfo.get("thread_id"):
@@ -1091,7 +1089,6 @@ def prune_discord_threads_to_limit(token, max_active=MAX_ACTIVE_DISCORD_THREADS)
                     discord_api(token, "PATCH", f"/channels/{tid}", {"archived": True})
                     tinfo["archived"] = True
                     arch_state[cid] = True
-                    set_conv_archived_locally(cid, True)
                     changed = True
                     time.sleep(0.2)
                 except Exception:
@@ -1120,17 +1117,10 @@ def _is_discord_auto_archive(ch_info):
 
 def sync_archives(token, general_channel_id, guild_id=None):
     """
-    Two-way synchronization between Antigravity (`annotations/*.pbtxt`) and Discord threads:
-    1. For all conversations that have a thread in `discord_threads.json`:
-       - If archived on Desktop -> archives the Discord thread (and prefixes title with 🗄️).
-       - If unarchived on Desktop -> unarchives the Discord thread.
-       - If archived by user on Discord -> marks `archived:true` on Desktop via `UpdateConversationAnnotations`.
-       - If unarchived by user on Discord -> marks `archived:false` on Desktop.
-    2. For any conversation archived on Desktop that does NOT yet have a Discord thread:
-       - Creates its archived summary thread on Discord using language matching the conversation title.
+    Synchronizes Discord thread archive limits (top MAX_ACTIVE_DISCORD_THREADS = 15 active on Discord)
+    without modifying local Antigravity Desktop conversation archive states.
     """
     import fcntl
-    import discord_hook
 
     lock_file = os.path.join(CONFIG_DIR, "discord_archive.lock")
     lock_fd = None
@@ -1146,113 +1136,7 @@ def sync_archives(token, general_channel_id, guild_id=None):
         return
 
     try:
-        threads = load_json(THREADS_FILE, {})
-        arch_state = load_json(ARCHIVE_STATE_FILE, {})
-        threads_changed = False
-        arch_changed = False
-
-        # Only sync the top MAX_ACTIVE_DISCORD_THREADS (15) active threads to prevent rate limiting or loop latency
-        convs = list_all_conversations(include_archived=True)
-        cids_with_threads = [
-            c["id"] for c in convs
-            if c["id"] in threads and isinstance(threads.get(c["id"]), dict) and threads[c["id"]].get("thread_id")
-        ]
-        active_sync_cids = set(cids_with_threads[:MAX_ACTIVE_DISCORD_THREADS])
-
-        for cid in active_sync_cids:
-            info = threads.get(cid)
-            if not isinstance(info, dict) or not info.get("thread_id"):
-                continue
-            tid = info["thread_id"]
-            local_arch = is_conv_archived_locally(cid)
-            prev_known = arch_state.get(cid)
-
-            remote_arch = None
-            remote_name = info.get("title", "")
-            try:
-                ch_info = discord_api(token, "GET", f"/channels/{tid}")
-                if ch_info and "thread_metadata" in ch_info:
-                    remote_arch = bool(ch_info["thread_metadata"].get("archived", False))
-                    remote_name = ch_info.get("name") or remote_name
-            except Exception:
-                continue
-
-            if remote_arch is None:
-                continue
-
-            if prev_known is None:
-                if local_arch != remote_arch:
-                    if local_arch:
-                        try:
-                            new_name = re.sub(r"^[💬🗄️]\s*", "🗄️ ", remote_name)[:95]
-                            discord_api(token, "PATCH", f"/channels/{tid}", {"name": new_name, "archived": True})
-                            info["title"] = new_name
-                            info["archived"] = True
-                            threads_changed = True
-                        except Exception:
-                            pass
-                    else:
-                        try:
-                            discord_api(token, "PATCH", f"/channels/{tid}", {"archived": False})
-                        except Exception:
-                            pass
-                arch_state[cid] = local_arch
-                arch_changed = True
-            else:
-                if local_arch != prev_known and remote_arch == prev_known:
-                    try:
-                        if local_arch:
-                            new_name = re.sub(r"^[💬🗄️]\s*", "🗄️ ", remote_name)[:95]
-                            discord_api(token, "PATCH", f"/channels/{tid}", {"name": new_name, "archived": True})
-                            info["title"] = new_name
-                            info["archived"] = True
-                        else:
-                            new_name = re.sub(r"^[💬🗄️]\s*", "💬 ", remote_name)[:95]
-                            discord_api(token, "PATCH", f"/channels/{tid}", {"archived": False})
-                            discord_api(token, "PATCH", f"/channels/{tid}", {"name": new_name})
-                            info["title"] = new_name
-                            info["archived"] = False
-                        threads_changed = True
-                        arch_state[cid] = local_arch
-                        arch_changed = True
-                    except Exception:
-                        pass
-                elif remote_arch != prev_known and local_arch == prev_known:
-                    convs = list_all_conversations(include_archived=True)
-                    cids_with_threads = [
-                        c["id"] for c in convs
-                        if c["id"] in threads and isinstance(threads.get(c["id"]), dict) and threads[c["id"]].get("thread_id")
-                    ]
-                    # If this is among the top MAX_ACTIVE_DISCORD_THREADS, ensure it stays unarchived
-                    if cid in cids_with_threads[:MAX_ACTIVE_DISCORD_THREADS]:
-                        if remote_arch:
-                            try:
-                                discord_api(token, "PATCH", f"/channels/{tid}", {"archived": False, "auto_archive_duration": 10080})
-                                info["archived"] = False
-                                threads_changed = True
-                                arch_state[cid] = False
-                                arch_changed = True
-                            except Exception:
-                                pass
-                        continue
-
-                    if remote_arch and _is_discord_auto_archive(ch_info):
-                        continue
-                    set_conv_archived_locally(cid, bool(remote_arch))
-                    info["archived"] = bool(remote_arch)
-                    threads_changed = True
-                    arch_state[cid] = bool(remote_arch)
-                    arch_changed = True
-                elif local_arch != prev_known and remote_arch != prev_known:
-                    arch_state[cid] = local_arch
-                    arch_changed = True
-
-        if threads_changed:
-            save_json(THREADS_FILE, threads)
-        if arch_changed:
-            save_json(ARCHIVE_STATE_FILE, arch_state)
-
-        # Enforce that only the top 15 most recent threads remain active in Discord
+        # Enforce that only the top 15 most recent threads remain active in Discord (Discord-only)
         prune_discord_threads_to_limit(token, MAX_ACTIVE_DISCORD_THREADS)
     finally:
         if lock_fd is not None:

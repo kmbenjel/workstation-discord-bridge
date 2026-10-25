@@ -629,8 +629,6 @@ def main():
                                         c_info["last_author_id"] = author_id
                                         if c_info.get("archived"):
                                             c_info["archived"] = False
-                                            if len(c_key) >= 32:
-                                                discord_manager.set_conv_archived_locally(c_key, False)
                                         break
 
                                 threads["active_thread_id"] = cid

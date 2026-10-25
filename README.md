@@ -2,161 +2,228 @@
 
 <div align="center">
 
-**Two-Way Autonomous Agent Steering, Mobile Supervision & Claude Code Remote Control**
+**Direct Mobile Chat with Google Antigravity, Multi-Agent Orchestration (Claude Code, `agy` CLI), Remote SSH & VS Code Workspace Control**
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Linux](https://img.shields.io/badge/Linux-Workstation-fcc624?style=for-the-badge&logo=linux&logoColor=black)](https://kernel.org)
+[![Python](https://img.shields.io/badge/Python-3.10%2B%20(Zero--Dep%20Stdlib)-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Linux](https://img.shields.io/badge/Linux-Workstation%20%26%20SSH-fcc624?style=for-the-badge&logo=linux&logoColor=black)](https://kernel.org)
 [![Discord](https://img.shields.io/badge/Discord-Gateway%20v10-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
-[![Antigravity](https://img.shields.io/badge/Antigravity-Desktop%20App-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://github.com/google)
+[![Antigravity](https://img.shields.io/badge/Antigravity-IDE%20%26%20CLI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://github.com/google)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Remote%20Control%20(/rc)-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://claude.ai)
 
 </div>
 
 ---
 
-## Overview
+## Why This Repository Exists
 
-**Workstation Discord Bridge** connects a Linux development workstation to Discord for fast, bidirectional mobile supervision and steering. It allows you to supervise autonomous AI coding sessions (Google Antigravity desktop app, Claude Code Native), monitor running background jobs, run shell commands, and inspect workstation resources directly from a phone without needing remote desktop software.
+Most mobile-to-workstation tools either force you into a cramped remote desktop screen or restrict you to rigid, pre-programmed bot commands.
 
-- **Desktop ➔ Mobile**: Prompts executed in the Antigravity desktop app automatically stream structured turn completions, code diffs, and test results straight to your phone via lifecycle hooks.
-- **Mobile ➔ Workstation**: Send commands or prompts from Discord mobile (`!claude`, `!models`, `!search`, `!status`, `!sh`) to control host runtimes, check quota limits, or steer background agents on the fly.
+**Workstation Discord Bridge** was built for a different workflow: **turning Discord into a direct, conversational mobile interface to an AI-native Linux engineering workstation**. Instead of only submitting shell one-liners or fixed `!commands`, you **chat directly in natural language (text, voice messages, or screenshots) with Google Antigravity**, Claude Code, or any agent running on the host machine.
+
+Because the workstation agent has full access to your local IDE workspaces, SSH keys, browser automation (Playwright / Chrome DevTools MCP), and system daemons, chatting with the bridge from your phone lets you:
+
+- **Chat Directly with Antigravity (Zero-Prefix Conversational Steering)**: Send a plain message, voice note, or image in `#general` or inside any conversation thread to pair-program directly with Antigravity. No command prefix is needed—every Discord thread maps `1:1` to a persistent Antigravity conversation across your Desktop IDE and CLI.
+- **Manage Open VS Code / Antigravity IDE Workspaces**: Ask the agent to inspect, edit, test, or switch across open VS Code / Antigravity IDE workspaces (`~/projects/*`), auto-launch the Desktop IDE on the host display (`DISPLAY=:0` / Wayland) if closed, run Playwright browser checks, and send visual screenshots or diffs back to your phone.
+- **Open & Steer Remote SSH Sessions, Cloud Containers & Replit Workflows**: Instruct the agent (or use direct shell/agent sessions) to open remote SSH tunnels, manage cloud servers, or control **Replit containers** via SSH and GitHub sync—bypassing heavy mobile web IDEs entirely.
+- **Orchestrate Any Agent Runtime**: Seamlessly switch between **Google Antigravity Desktop IDE** (via local Language Server `agentapi`), **headless Antigravity CLI (`agy`)** across any model (`argon`, `flash`, `opus`, `sonnet`, `gpt`), **Claude Code Native** (`tmux` `/rc active` remote control + live terminal steering), subagents, or custom CLI agents.
+- **Supervise Background Pipelines & Host Telemetry**: Monitor long-running systemd jobs (such as the 16,700-volume / 174+ GB [`phone-library`](https://github.com/kmbenjel/phone-library) computer-vision pipeline), check multi-model AI quotas, search full-text archives of past sessions, and cancel runaway processes in under a second.
+
+---
+
+## How the Bridge Setup Works (Direct Chat + Lifecycle Sync)
+
+The bridge is built entirely on **Python's standard library** (zero external pip dependencies required at runtime) and integrates directly into the workstation's `~/.gemini/config/` setup through three cooperating layers:
+
+### 1. Direct Conversational Steering (`GEMINI.md` + `discord_listener.py`)
+When you type a normal message in Discord (without any `!` prefix), the bridge routes it straight into a live Antigravity conversation through a **dual-mode inbound pipeline**:
+
+1. **In-Session Reactive Wakeup (Active Turn Loop)**:
+   - Guided by the workstation's global agent rules (`~/.gemini/config/GEMINI.md`), an active Antigravity session runs `python3 ~/.gemini/config/discord_listener.py` as a non-blocking background task (`WaitMsBeforeAsync: 500`).
+   - The moment you send a message, voice recording (`.ogg`/`.m4a`/`.mp3`), or image in Discord, `discord_listener.py` downloads any attachments to `~/.gemini/antigravity/scratch/`, emits `[DISCORD_MESSAGE in <thread> (conv=<id>, thread_id=<tid>) from <user>]: <prompt>` to stdout, and exits `0`.
+   - This immediately wakes the running Antigravity agent turn with zero polling delay. The agent quotes your mobile prompt, executes the full multi-step task (modifying open VS Code work, opening an SSH session, running tests, or spawning subagents), and re-arms `discord_listener.py` before ending its turn.
+2. **Systemd Daemon & Language Server IPC (`discord-listener.service` ➔ `agentapi`)**:
+   - When no foreground task is waiting, the persistent systemd service routes your message to `discord_manager.py`.
+   - `discover_language_server()` scans `/proc/<pid>/cmdline` and `ss -tulpn` to dynamically extract the active Antigravity Language Server localhost port and `--csrf_token`.
+   - If the Antigravity Desktop IDE is closed, `ensure_antigravity_open()` reconstructs the host's graphical environment (`DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`) and launches `/opt/Antigravity/antigravity` automatically.
+   - It then injects your prompt directly into the conversation via `language_server agentapi send-message` (or `new-conversation`), with automatic fallback to headless `agy --conversation <uuid>` if the desktop server is busy.
+
+### 2. Automatic Turn Forwarding (`hooks.json` ➔ `discord_hook.py`)
+Every reply generated in Antigravity—whether prompted from your laptop keyboard at the desk or from Discord on your phone—is automatically pushed to the matching Discord thread via `~/.gemini/config/hooks.json`:
+
+```json
+{
+  "discord-reply-sync": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/usr/bin/python3 /home/k/.gemini/config/discord_hook.py",
+        "timeout": 15
+      }
+    ]
+  }
+}
+```
+
+On every turn completion (`Stop` event), `discord_hook.py`:
+- Reads the latest conversation steps from `~/.gemini/antigravity/brain/<conv_id>/.system_generated/logs/transcript_full.jsonl` and tracks step offsets in `discord_state.json` to prevent duplicate delivery.
+- Applies **language-adaptive Markdown formatting (`format_for_discord`)**: preserves clean LTR formatting on English lines while applying Unicode Bidi isolation (`LRM`/`RLM`) on Arabic lines without ever corrupting inline code or fenced blocks.
+- Splits long responses safely across code fences (`split_markdown_chunks`) and automatically uploads generated images, PDFs, or Markdown exports directly into the thread.
+- For mid-turn progress updates during long tasks, the agent can also call `discord_send.py "status update"` directly.
+
+### 3. Unified Desktop ⇄ CLI Store & Smart Thread Windowing (`discord_manager.py`)
+- **Bi-Directional Store Unification**: `sync_cli_and_desktop_stores()` cross-links `~/.gemini/antigravity` (Desktop IDE) and `~/.gemini/antigravity-cli` (`agy` CLI) protobufs (`conversations/*.pb`), brain transcripts, annotations (`annotations/*.pbtxt`), and SQLite FTS databases (`conversation_summaries.db`). Any session started in the Desktop IDE can be resumed headlessly via `!cli <prompt>`, forked (`!fork`), or searched (`!search`).
+- **Low-Latency 15-Thread Polling Window**: To keep mobile responsiveness under 1 second without hitting Discord API rate limits, `discord_listener.py` polls `#general` and the top 3 active threads on every cycle, round-robins across the remaining active threads (up to 15 visible in the Discord sidebar), and automatically archives older sidebar threads on Discord while preserving their active status on the Desktop IDE.
 
 ---
 
 ## Architecture & Data Flow
 
-The bridge decouples **inbound mobile commands** (polled via a lightweight background listener) from **outbound agent responses** (pushed automatically on turn completion via lifecycle hooks):
-
 ```mermaid
 flowchart TB
     subgraph Mobile ["📱 Mobile Device (Discord App)"]
-        UserPrompt["User Prompt / Command (!claude, !models, !search, Prompt)"]
-        MobileThread["Active Synchronized Conversation Thread"]
+        NaturalChat["Direct Natural-Language Chat\n(Text, Voice Notes, Screenshots, Files)"]
+        BangCmds["Power Commands\n(!claude, !cli, !models, !search, !status, !sh)"]
+        MobileThread["Synchronized Conversation Thread\n(1:1 Mapped to Workstation Session)"]
     end
 
     subgraph DiscordCloud ["☁️ Discord Cloud Gateway (v10 API)"]
-        Gateway["Channels & Threads API"]
+        Gateway["Channels, Threads & Multipart Media API"]
     end
 
     subgraph Workstation ["💻 Linux Workstation (khalid)"]
-        subgraph InboundPipeline ["Inbound Command & Dispatch Loop"]
-            Listener["discord_listener.py\n(Sub-second Poller & Router)"]
-            Manager["discord_manager.py\n(Session & Process Controller)"]
+        subgraph InboundPipeline ["Dual-Mode Inbound Pipeline"]
+            Listener["discord_listener.py\n(In-Session Task Wakeup + Systemd Poller)"]
+            Manager["discord_manager.py\n(Session Router, LS Discovery & Store Sync)"]
         end
 
-        subgraph CoreRuntimes ["Execution Runtimes"]
-            AntigravityLS["Antigravity Language Server\n(Port + CSRF Auto-Discovery)"]
-            AgyCLI["Antigravity CLI (agy)\nHeadless Agent Sessions"]
+        subgraph AgentRuntimes ["Multi-Agent Runtimes"]
+            ActiveTurn["Active Antigravity Agent Turn\n(Instant Wakeup via [DISCORD_MESSAGE] stdout)"]
+            AntigravityLS["Antigravity Desktop IDE & Language Server\n(Auto-Launch on :0 + Port/CSRF Discovery)"]
+            AgyCLI["Headless Antigravity CLI (agy)\n(Multi-Model: Argon, Flash, Opus, Sonnet, GPT)"]
             ClaudeRemote["Claude Code Native\n(tmux: claude-remote /rc active)"]
-            ShellWorker["Subprocess Worker\n(System Commands & Diagnostics)"]
         end
 
-        subgraph OutboundPipeline ["Outbound Event & Reply Hook"]
-            Hook["discord_hook.py\n(Antigravity Turn Hook)"]
-            StatusGen["discord_status.py\n(Hardware & Pipeline Inspector)"]
+        subgraph WorkstationControl ["Downstream Workstation & Remote Environments"]
+            VSCodeWork["Open VS Code / Antigravity Workspaces\n(Code Edits, Git, Test Suites, Subagents)"]
+            RemoteSSH["Remote SSH & Cloud Containers\n(Replit SSH, Remote Servers, Android FTP)"]
+            BrowserMCP["GUI & Browser Automation\n(Playwright, Chrome DevTools MCP, X11/Wayland)"]
+            ShellWorker["Host Shell & Systemd Daemons\n(Process Control, Telemetry, Crop Pipelines)"]
         end
 
-        subgraph Storage ["Persistent State"]
-            Brain["~/.gemini/antigravity/brain/\n(Transcripts & Artifacts)"]
-            ThreadsJSON["discord_threads.json\n(Active Thread Sync Map)"]
+        subgraph OutboundPipeline ["Outbound Lifecycle Hook & State"]
+            Brain["~/.gemini/antigravity/brain/\n(Unified Desktop & CLI Transcripts)"]
+            Hook["discord_hook.py + discord_send.py\n(Stop Hook, Bidi/Markdown Formatter & Uploader)"]
         end
     end
 
     %% Inbound Flow
-    UserPrompt -->|Send message| Gateway
-    Gateway -->|Poll / Long-wait| Listener
-    Listener -->|Route action| Manager
-    Manager -->|agentapi / IPC| AntigravityLS
-    Manager -->|Spawn / Attach| AgyCLI
-    Manager -->|tmux send-keys| ClaudeRemote
-    Manager -->|Exec| ShellWorker
-    Manager -->|Query state| StatusGen
+    NaturalChat -->|Send message / media| Gateway
+    BangCmds -->|Send command| Gateway
+    Gateway -->|Sub-second poll| Listener
+    Listener -->|"[DISCORD_MESSAGE]" stdout wakeup| ActiveTurn
+    Listener -->|Route command / daemon dispatch| Manager
+    Manager -->|agentapi send-message / new-conversation| AntigravityLS
+    Manager -->|Spawn / resume session| AgyCLI
+    Manager -->|tmux send-keys / capture-pane| ClaudeRemote
+    Manager -->|Direct exec / query| ShellWorker
+
+    %% Agent Capabilities
+    ActiveTurn --> VSCodeWork
+    ActiveTurn --> RemoteSSH
+    ActiveTurn --> BrowserMCP
+    ActiveTurn --> ShellWorker
+    AntigravityLS --> VSCodeWork
+    AgyCLI --> VSCodeWork
+    ClaudeRemote --> VSCodeWork
 
     %% Outbound Flow
-    AntigravityLS -->|Write state| Brain
-    AgyCLI -->|Write state| Brain
-    ClaudeRemote -->|TUI Socket / Web Bridge| Gateway
-    Brain -->|Trigger Stop hook| Hook
-    Hook -->|Read thread map| ThreadsJSON
-    Hook -->|Post structured response| Gateway
-    Gateway -->|Push notification| MobileThread
-    StatusGen -->|Format markdown| Hook
+    ActiveTurn -->|Write transcript & artifacts| Brain
+    AntigravityLS -->|Write transcript & artifacts| Brain
+    AgyCLI -->|Write transcript & artifacts| Brain
+    Brain -->|Trigger hooks.json Stop event| Hook
+    Hook -->|Push formatted reply & attachments| Gateway
+    Gateway -->|Deliver to thread| MobileThread
 ```
 
 ---
 
-## Key Features
+## Core Capabilities
 
-### 1. Claude Code Native Remote Control (`!claude` / `!remote`)
-- **Direct Remote Session Hook**: Connects to Claude Code's native remote session (`/rc active`) running inside a background tmux session.
-- **One-Tap Mobile Handoff**: Posts the live session URL (`https://claude.ai/code/session_...`) for immediate interactive handoff to the Claude iOS/Android app.
-- **Terminal Mirroring**: Inspect live terminal outputs directly inside Discord using `!claude pane`.
-- **Bidirectional Prompting**: Send `!claude <prompt>` from Discord to pipe instructions straight to Claude Code.
+### 1. Direct Conversational Pair-Programming with Antigravity
+- **Zero-Prefix Chat**: Type naturally in `#general` to spin up a new Discord thread and launch a fresh Antigravity session, or reply inside any existing thread to continue that exact conversation.
+- **Voice, Image & File Understanding**: Record a voice message or attach a screenshot on your phone; `discord_listener.py` downloads it locally and passes `file://` references directly to Antigravity for multimodal analysis.
+- **Full Workspace & Tool Access**: Through natural conversation, ask Antigravity to refactor code in your open VS Code workspace, run test suites, inspect browser rendering via Playwright/DevTools MCP, or generate PDFs and images that are uploaded straight back to Discord.
 
-### 2. Multi-Model Quota Monitor (`!models` / `!quota`)
-- **Dynamic Language Server Queries**: Queries the local Antigravity Language Server to report remaining quotas and reset schedules.
-- **Shared Pool Grouping**: Automatically handles shared quota pools across Gemini 3.8 Flash, Opus 5.5, Sonnet 5.5, and Argon.
-- **Fast Response**: Returns accurate usage metrics in under a second directly to your phone.
+### 2. Remote SSH, Cloud Containers & VS Code Workspace Management
+- **Decoupled Cloud & Replit Control**: Connect to remote SSH hosts, cloud containers, and Replit environments from your workstation agent—executing remote builds, syncing GitHub branches, and managing remote filesystems from Discord without opening heavy mobile web IDEs.
+- **Desktop GUI Auto-Wake (`!open`)**: If the Antigravity / VS Code Desktop IDE is closed on your workstation, the bridge reconstructs the X11/Wayland/DBus environment and launches it automatically on display `:0`.
+- **Cross-Runtime Continuity**: Start an architectural refactor in the Desktop IDE at your desk, walk away, and continue the exact same conversation thread from your phone via the Desktop Language Server or headless `agy` CLI (`!cli <prompt>`).
 
-### 3. Session Archive Search (`!search`)
-- **Thread Sync**: Keeps active conversations mapped to clear, navigable Discord threads.
-- **Full-Text Archive Search**: Run `!search <query>` to instantly search past sessions, turn histories, and code discussions without opening the desktop app.
+### 3. Multi-Agent Steering: Claude Code Remote Control (`!claude`) & Headless `agy` (`!cli`)
+- **Claude Code Native Bridge (`!claude` / `!remote`)**: Connects to Claude Code's remote session (`/rc active`) inside a managed `tmux` session (`claude-remote`), surfaces the one-tap mobile handoff URL (`https://claude.ai/code/session_...`), mirrors the live terminal (`!claude pane`), and pipes prompts directly into the TUI (`!claude <prompt>`).
+- **Headless Antigravity CLI (`!cli`)**: Run or resume any Desktop or CLI conversation asynchronously with explicit model and effort selection (`!cli --model=opus --effort=high <prompt>`).
+- **Multi-Model Quota Inspector (`!models` / `!quota`)**: Queries the local Language Server `GetUserStatus` RPC to display live remaining quota percentages and UTC reset times across Gemini Argon, Gemini 3.8 Flash, Claude Opus 5.5, Claude Sonnet 5.5, and GPT-OSS.
 
-### 4. Workstation Telemetry & Process Management (`!status`, `!stop`, `!running`)
-- **Host Diagnostics**: Live CPU utilization, memory and swap usage, thermals, battery state, and disk space.
-- **Process Supervision**: List active cascades and background tasks (`!running`) and stop runaway processes instantly (`!stop`).
-- **Direct Shell Access**: Execute system commands (`!sh <cmd>`) with clean terminal output formatting.
+### 4. Conversation Archive Search, Branching & Telemetry (`!search`, `!read`, `!fork`, `!status`)
+- **Full-Text Archive Search (`!search <query>`)**: Searches across all Desktop and CLI sessions via Language Server RPC and SQLite FTS5 (`conversation_summaries.db`), returning matching snippets and index numbers.
+- **Session Restoration & Export (`!read <num|id> [all]`)**: Opens any past or archived conversation into a dedicated Discord thread and attaches the complete Markdown transcript.
+- **Conversation Forking (`!fork`)**: Clones any existing session into a new branch thread (`ForkConversation` RPC) for isolated experimentation.
+- **Host & Pipeline Telemetry (`!status`, `!jobs`, `!crop`, `!stop`)**: Reports live CPU load, RAM/swap, thermal sensors, battery state, Android FTP connectivity, and systemd worker status, with instant process termination (`!stop`).
 
 ---
 
-## Mobile Command Reference
+## Mobile Interaction & Command Reference
 
-Commands sent from Discord mobile to supervise and control the host workstation:
+In addition to **chatting directly in plain English or Arabic** (no prefix required), you can use these built-in commands at any time (with `!` or `/`, in English or Arabic):
 
-| Command | Action & Output |
+| Interaction / Command | Action & Output |
 |---|---|
-| `!claude` / `!remote` | Claude Code remote control status, active model, mobile app handoff URL, and working directory. |
-| `!claude pane` | Capture and display the live tmux terminal mirror from Claude Code. |
-| `!claude <prompt>` | Pipe a command or instruction directly into the active Claude Code session. |
-| `!models` / `!quota` | Quota monitor: remaining percentages, shared pools, and UTC reset times. |
-| `!search <query>` | Instant full-text search across previous desktop sessions and turn history. |
-| `!status` | Host workstation telemetry: CPU load, RAM usage, thermals, battery, and disk. |
-| `!running` / `!sessions` | Control center showing running background tasks, active cascades, and CLI jobs. |
-| `!stop` / `!cancel` | Terminate background tasks or runaway loops immediately. |
-| `!fork` | Fork the current conversation into a new branch thread for isolated exploration. |
-| `!sh <command>` | Execute host bash commands with formatted terminal output. |
-| `!cli <prompt>` | Launch a headless `agy` CLI turn in the background and stream the output to Discord. |
-| `!chats [page]` | Paginated catalog of past conversations. |
+| **`<any natural message>`** | **Direct chat with Antigravity**: starts a new session thread in `#general` or continues the active conversation in any thread (supports text, voice notes, images, and files). |
+| `!sessions` / `!running` | Live dashboard of Antigravity Desktop IDE, Language Server, headless `agy` CLI processes, and active cascades. |
+| `!cli [--model=...] <prompt>` | Run or resume the current thread's conversation via headless `agy` CLI (e.g., `!cli --model=opus --effort=high <prompt>`). |
+| `!claude` / `!remote` | Claude Code Remote Control center: `/rc` status, active model, mobile app handoff URL, and working directory. |
+| `!claude pane` / `!claude <prompt>` | Capture the live `tmux` terminal mirror from Claude Code, or pipe a prompt directly into the active Claude Code session. |
+| `!models` / `!quota` | Live AI model quota monitor: remaining percentages, shared quota pools, and UTC reset schedules. |
+| `!chats [page]` / `!archived` | Paginated catalog of all unified Desktop & CLI conversations (or archived sessions). |
+| `!search <query>` | Instant full-text search across past session titles, user prompts, and agent responses. |
+| `!read <num\|id> [all\|N]` | Restore any past conversation into a dedicated Discord thread and export its full Markdown transcript. |
+| `!fork [num\|id]` | Fork the current or specified conversation into a new branch thread for isolated exploration. |
+| `!archive` / `!unarchive` | Bi-directionally archive or unarchive a conversation across both Antigravity Desktop and Discord. |
+| `!open` | Remotely launch the Antigravity Desktop IDE on the workstation display (`:0`) if closed. |
+| `!status` / `!jobs` / `!crop` | Host workstation telemetry (CPU, RAM, thermals, battery, disk) and background systemd pipeline status. |
+| `!stop [num\|id]` / `!cancel` | Immediately cancel a running or stuck Desktop cascade (`CancelCascadeInvocation`) or CLI worker. |
+| `!sh <command>` | Execute a direct host bash command (SSH check, git status, service restart) with formatted terminal output. |
 
 ---
 
-## 📱 Mobile Supervision Showcase
+## 📱 Mobile Supervision & Conversational Steering Showcase
 
-Screenshots captured from the mobile Discord client during live workstation sessions:
+Authentic captures from the Discord mobile client during live workstation sessions:
 
 <div align="center">
 
-| 🎛️ Claude Code Remote Control (`!claude`) | 🧠 AI Models Quota Monitor (`!models`) |
+| 💬 Direct Conversational Steering with Antigravity | 📨 Automated Lifecycle Hook Push (`discord_hook.py`) |
 |:---:|:---:|
-| <img src="docs/screenshots/claude_remote_control.png" width="370" alt="Claude Code Remote Control"> <br> *Direct bridge URL for Claude iOS/Android app, working directory, and live process connection* | <img src="docs/screenshots/ai_models_quota_check.png" width="370" alt="AI Models Quota Monitor"> <br> *Quota percentage check across Gemini 3.8 Flash, Opus 5.5, Sonnet 5.5, and Argon* |
+| <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Conversational Agent Steering"> <br> *Natural developer request asked in plain text from Discord mobile and executed by Antigravity on the workstation* | <img src="docs/screenshots/agent_turn_completion.png" width="370" alt="Automated Turn Completion Push"> <br> *Turn verification and test suite results automatically formatted and pushed to the active thread on turn completion* |
 
 <br>
 
-| 📊 Workstation Telemetry (`!status`) | 🔍 Conversation Archive Search (`!search`) |
+| 🎛️ Claude Code Remote Control (`!claude`) | 🧠 Multi-Model Quota Monitor (`!models`) |
 |:---:|:---:|
-| <img src="docs/screenshots/live_telemetry_check.png" width="370" alt="Workstation Telemetry"> <br> *Host hardware metrics: CPU load, RAM and swap, thermals, and battery level* | <img src="docs/screenshots/conversation_archive_search.png" width="370" alt="Conversation Archive Search"> <br> *Instant full-text query across past session history and turns (`!search latency`)* |
+| <img src="docs/screenshots/claude_remote_control.png" width="370" alt="Claude Code Remote Control"> <br> *Direct bridge URL for Claude iOS/Android app, working directory, and live tmux process connection* | <img src="docs/screenshots/ai_models_quota_check.png" width="370" alt="AI Models Quota Monitor"> <br> *Live quota percentages and reset times across Gemini 3.8 Flash, Opus 5.5, Sonnet 5.5, and Argon* |
 
 <br>
 
-| 💬 Conversational Agent Steering | 🛑 Emergency Process Cancellation (`!stop`) |
+| 🔍 Full-Text Conversation Archive Search (`!search`) | 📊 Workstation & Pipeline Telemetry (`!status`) |
 |:---:|:---:|
-| <img src="docs/screenshots/mobile_agent_steering.png" width="370" alt="Conversational Agent Steering"> <br> *Natural developer question asked from Discord mobile and executed by the workstation agent* | <img src="docs/screenshots/emergency_process_cancellation.png" width="370" alt="Emergency Process Cancellation"> <br> *Instant termination of runaway tasks and background workers via `!stop`* |
+| <img src="docs/screenshots/conversation_archive_search.png" width="370" alt="Conversation Archive Search"> <br> *Instant full-text search across past Desktop & CLI session transcripts (`!search latency`)* | <img src="docs/screenshots/live_telemetry_check.png" width="370" alt="Workstation Telemetry"> <br> *Live host hardware metrics: CPU load, RAM and swap, thermals, battery level, and background jobs* |
 
 <br>
 
-| 💻 Direct Shell Execution (`!sh`) | 📨 Automated Turn Completion Push |
+| 🛑 Instant Process Cancellation (`!stop`) | 💻 Direct Host Shell Execution (`!sh`) |
 |:---:|:---:|
-| <img src="docs/screenshots/raw_shell_execution.png" width="370" alt="Direct Shell Execution"> <br> *Direct host shell command execution returned with formatted terminal styling* | <img src="docs/screenshots/agent_turn_completion.png" width="370" alt="Automated Turn Completion Push"> <br> *Automated turn verification and execution results pushed via lifecycle hook* |
+| <img src="docs/screenshots/emergency_process_cancellation.png" width="370" alt="Emergency Process Cancellation"> <br> *Immediate termination of runaway cascades and background workers via Language Server RPC* | <img src="docs/screenshots/raw_shell_execution.png" width="370" alt="Direct Shell Execution"> <br> *Quick host shell execution returned with clean terminal output formatting* |
 
 </div>
 
@@ -164,21 +231,21 @@ Screenshots captured from the mobile Discord client during live workstation sess
 
 ## Repository Structure
 
-```
+```text
 workstation-discord-bridge/
-├── discord_manager.py          # Session controller, Claude remote bridge, and quota manager
-├── discord_listener.py         # Sub-second message poller, thread router, and command dispatcher
-├── discord_hook.py             # Antigravity turn hook: formats & transmits responses to Discord
-├── discord_status.py           # Hardware, systemd, and pipeline telemetry collector
-├── discord_send.py             # Standalone CLI utility to send messages to Discord
-├── hooks.json.example          # Sample Antigravity hooks configuration
-├── discord_config.example.json # Configuration schema template
-├── requirements.txt            # Python dependencies
+├── discord_listener.py         # Dual-mode inbound poller (in-session [DISCORD_MESSAGE] wakeup + daemon router)
+├── discord_manager.py          # Session controller, LS port/CSRF discovery, Desktop<->CLI store unification & Claude bridge
+├── discord_hook.py             # Antigravity Stop hook: transcript reader, Bidi/Markdown formatter & file uploader
+├── discord_status.py           # Hardware telemetry, systemd service inspector, and pipeline status collector
+├── discord_send.py             # Standalone CLI utility for mid-turn agent notifications to Discord
+├── hooks.json.example          # Antigravity Stop lifecycle hook configuration (~/.gemini/config/hooks.json)
+├── discord_config.example.json # Bot token, guild, channel, and user ID configuration schema
+├── requirements.txt            # Zero mandatory external dependencies (runs on Python 3.10+ stdlib)
 ├── docs/
-│   └── screenshots/            # Curated mobile captures
+│   └── screenshots/            # Live mobile captures from Discord iOS/Android client
 ├── systemd/
-│   └── discord-listener.service# Systemd user service unit for background operation
-└── README.md                   # Project documentation
+│   └── discord-listener.service# Systemd user service unit for continuous background operation
+└── README.md                   # Architecture & setup documentation
 ```
 
 ---
@@ -186,23 +253,23 @@ workstation-discord-bridge/
 ## Setup & Installation
 
 ### 1. Prerequisites
-- Linux Workstation (Ubuntu / Debian / Fedora)
-- Python 3.10+
-- A Discord Bot with Message Content Intent enabled ([Discord Developer Portal](https://discord.com/developers))
-- Claude Code Native (`npm install -g @anthropic-ai/claude-code`) or Google Antigravity
+- Linux Workstation (Ubuntu / Debian / Fedora / Arch)
+- Python 3.10+ (uses standard library `urllib`, `sqlite3`, `fcntl`, `subprocess` — no heavy third-party packages required)
+- A Discord Bot with **Message Content Intent** enabled ([Discord Developer Portal](https://discord.com/developers))
+- Google Antigravity Desktop IDE / `agy` CLI, Claude Code Native (`@anthropic-ai/claude-code`), or your preferred local agent CLI
 
 ### 2. Configuration
-Clone the repository and prepare your private configuration:
+Clone the repository and link or copy the scripts into `~/.gemini/config/`:
 ```bash
 git clone https://github.com/kmbenjel/workstation-discord-bridge.git
 cd workstation-discord-bridge
 
-# Copy the example config
-cp discord_config.example.json discord_config.json
-chmod 600 discord_config.json
+# Copy the example config and restrict permissions
+cp discord_config.example.json ~/.gemini/config/discord_config.json
+chmod 600 ~/.gemini/config/discord_config.json
 ```
 
-Edit `discord_config.json`:
+Edit `~/.gemini/config/discord_config.json`:
 ```json
 {
   "bot_token": "YOUR_DISCORD_BOT_TOKEN",
@@ -212,8 +279,8 @@ Edit `discord_config.json`:
 }
 ```
 
-### 3. Antigravity Hook Integration
-Add the hook to your Antigravity hooks file (`~/.gemini/config/hooks.json`):
+### 3. Antigravity Lifecycle Hook & Global Agent Rule
+1. Add the `Stop` hook to `~/.gemini/config/hooks.json` so every agent turn automatically syncs to Discord:
 ```json
 {
   "discord-reply-sync": {
@@ -221,24 +288,24 @@ Add the hook to your Antigravity hooks file (`~/.gemini/config/hooks.json`):
     "Stop": [
       {
         "type": "command",
-        "command": "/usr/bin/python3 /path/to/workstation-discord-bridge/discord_hook.py",
+        "command": "/usr/bin/python3 /home/k/.gemini/config/discord_hook.py",
         "timeout": 15
       }
     ]
   }
 }
 ```
+2. Add the inbound listener rule to `~/.gemini/config/GEMINI.md` so active sessions automatically listen for and quote incoming `[DISCORD_MESSAGE ...]` prompts while keeping background tasks running continuously.
 
 ### 4. Running as a Background Systemd Service
-To keep the listener running continuously:
+To keep the bridge listening 24/7 even when no active turn is running:
 ```bash
-# Copy and enable the service
 mkdir -p ~/.config/systemd/user
 cp systemd/discord-listener.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now discord-listener.service
 
-# Check live logs
+# Inspect live bridge logs
 journalctl --user -u discord-listener.service -f
 ```
 
@@ -246,4 +313,4 @@ journalctl --user -u discord-listener.service -f
 
 ## License & Credits
 
-Built by [Khalid Benjelloun](https://benjelloun.dev) with [Google Antigravity](https://github.com/google) and [Claude Code](https://claude.ai). MIT License.
+Architected and built by **[Khalid Benjelloun](https://benjelloun.dev)** ([GitHub](https://github.com/kmbenjel) · [LinkedIn](https://linkedin.com/in/kmbenjel)) to power autonomous multi-agent engineering workflows with Google Antigravity and Claude Code. Released under the MIT License.
