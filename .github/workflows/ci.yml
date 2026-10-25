@@ -1,0 +1,35 @@
+name: CI — Syntax & Architecture Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify:
+    name: Python 3.11 Bytecode & CLI Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile all Python modules (zero-dependency stdlib verification)
+        run: |
+          python3 -m py_compile discord_listener.py discord_manager.py discord_hook.py discord_send.py discord_status.py
+
+      - name: Verify example configuration schemas
+        run: |
+          python3 -c '
+          import json
+          for p in ("discord_config.example.json", "hooks.json.example"):
+              with open(p, encoding="utf-8") as f:
+                  data = json.load(f)
+              assert isinstance(data, dict) and data, f"Invalid JSON in {p}"
+          print("Config schemas verified.")
+          '

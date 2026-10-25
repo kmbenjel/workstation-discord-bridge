@@ -5,6 +5,7 @@
 **Direct Mobile Chat with Google Antigravity, Multi-Agent Orchestration (Claude Code, `agy` CLI), Remote SSH & VS Code Workspace Control**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B%20(Zero--Dep%20Stdlib)-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![CI](https://img.shields.io/github/actions/workflow/status/kmbenjel/workstation-discord-bridge/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/kmbenjel/workstation-discord-bridge/actions/workflows/ci.yml)
 [![Linux](https://img.shields.io/badge/Linux-Workstation%20%26%20SSH-fcc624?style=for-the-badge&logo=linux&logoColor=black)](https://kernel.org)
 [![Discord](https://img.shields.io/badge/Discord-Gateway%20v10-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
 [![Antigravity](https://img.shields.io/badge/Antigravity-IDE%20%26%20CLI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://github.com/google)
