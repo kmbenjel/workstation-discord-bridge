@@ -28,6 +28,8 @@ Because the workstation agent has full access to your local IDE workspaces, SSH 
 - **Orchestrate Any Agent Runtime**: Seamlessly switch between **Google Antigravity Desktop IDE** (via local Language Server `agentapi`), **headless Antigravity CLI (`agy`)** across any model (`argon`, `flash`, `opus`, `sonnet`, `gpt`), **Claude Code Native** (`tmux` `/rc active` remote control + live terminal steering), subagents, or custom CLI agents.
 - **Supervise Background Pipelines & Host Telemetry**: Monitor long-running systemd jobs (such as the 16,700-volume / 174+ GB [`phone-library`](https://github.com/kmbenjel/phone-library) computer-vision pipeline), check multi-model AI quotas, search full-text archives of past sessions, and cancel runaway processes in under a second.
 
+> **🔒 Security & Private Instance Model**: Because this bridge grants full-privilege control over the host workstation (autonomous agents, IDE workspaces, SSH sessions, and shell execution), the live bot is **strictly private and single-tenant**—operating inside a private, single-member Discord server scoped to a single owner (`guild_id`, `channel_id`, and `user_id` in a `0600`-permissioned local config) with **zero open inbound network ports** (all traffic uses outbound HTTPS polling and lifecycle pushes). The codebase is published here as an open-source reference architecture so other engineers can self-host their own private workstation bridge.
+
 ---
 
 ## How the Bridge Setup Works (Direct Chat + Lifecycle Sync)
