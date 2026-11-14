@@ -27,6 +27,10 @@ CLI_BRAIN_DIR = os.path.expanduser("~/.gemini/antigravity-cli/brain")
 
 ARABIC_CHAR_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
 STRONG_CHAR_RE = re.compile(r"([\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]|[A-Za-z])")
+ENGLISH_LABEL_RE = re.compile(
+    r"^(?:Discord|Question|Prompt|User|System|Note|Warning|Error|Info|File|Attached|Voice)\b",
+    re.IGNORECASE,
+)
 
 
 def load_json(path, default):
@@ -48,20 +52,25 @@ def save_json(path, data):
 
 
 def is_arabic_text(text):
-    """Returns True if the prose of `text` (ignoring code spans, tags, and URLs) is primarily Arabic."""
+    """Returns True if the prose of `text` (ignoring code spans, tags, URLs, and structural markers) is primarily Arabic."""
     if not text:
         return False
     prose = re.sub(r"`[^`]*`", "", text)
     prose = re.sub(r"<[^>]+>", "", prose)
     prose = re.sub(r"https?://\S+", "", prose)
+    prose = re.sub(r"^[\s>#*\-+0-9.)\]]+", "", prose)
     ar_chars = ARABIC_CHAR_RE.findall(prose)
     if not ar_chars:
         return False
     en_chars = re.findall(r"[A-Za-z]", prose)
     m_first = STRONG_CHAR_RE.search(prose)
-    if m_first and ARABIC_CHAR_RE.match(m_first.group(1)):
+    if not m_first:
+        return False
+    if ARABIC_CHAR_RE.match(m_first.group(1)):
         return True
-    return len(ar_chars) >= len(en_chars)
+    if ENGLISH_LABEL_RE.match(prose[m_first.start():]):
+        return False
+    return len(ar_chars) > len(en_chars) * 2
 
 
 def detect_language(text):
@@ -115,11 +124,90 @@ def upload_file_to_discord(token, target_channel_id, file_path):
         pass
 
 
+def _normalize_discord_quote_blocks(lines):
+    """
+    Rewrites mismatched Arabic headers above English Discord quotes to English
+    and ensures an empty `>` separator line between quote header and body so
+    both Antigravity Desktop and Discord render independent directional blocks.
+    """
+    ar_hdr_re = re.compile(r"^>\s*\*\*سؤال من ديسكورد\s*[—\-–:]+\s*(.+?)(?::)?\*\*(?::)?\s*$")
+    en_hdr_re = re.compile(r"^>\s*\*\*Discord\s*[—\-–:]+\s*(.+?)(?::)?\*\*(?::)?\s*$", re.IGNORECASE)
+    out = []
+    in_code = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            out.append(line)
+            i += 1
+            continue
+        if in_code:
+            out.append(line)
+            i += 1
+            continue
+
+        m_ar = ar_hdr_re.match(line)
+        m_en = en_hdr_re.match(line) if not m_ar else None
+        if m_ar or m_en:
+            has_sep = i + 1 < len(lines) and lines[i + 1].strip() == ">"
+            q_idx = i + 2 if has_sep else i + 1
+            if q_idx < len(lines):
+                q_line = lines[q_idx]
+                m_q = re.match(r"^>\s*(.+)$", q_line)
+                if m_q and q_line.strip() != ">":
+                    q_body = m_q.group(1)
+                    if m_ar and not is_arabic_text(q_body):
+                        thread_info = m_ar.group(1).strip().rstrip(":").strip()
+                        line = f"> **Discord — {thread_info}:**"
+                    out.append(line)
+                    if has_sep:
+                        out.append(">")
+                        out.append(q_line)
+                        i = q_idx + 1
+                    else:
+                        out.append(">")
+                        out.append(q_line)
+                        i = q_idx + 1
+                    continue
+
+        out.append(line)
+        i += 1
+    return out
+
+
+def _isolate_embed_directions(text):
+    """Apply per-line RLM/LRM isolation outside fenced code blocks for mixed-direction embeds."""
+    lines = text.split("\n")
+    has_ar = bool(ARABIC_CHAR_RE.search(text))
+    if not has_ar:
+        return text
+    rlm = "\u200F"
+    lrm = "\u200E"
+    in_code = False
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            out.append(line)
+            continue
+        if in_code or not stripped:
+            out.append(line)
+            continue
+        if is_arabic_text(line):
+            out.append(line if line.startswith(rlm) else f"{rlm}{line}")
+        else:
+            out.append(line if line.startswith(lrm) else f"{lrm}{line}")
+    return "\n".join(out)
+
+
 def format_for_discord(md_text):
     """
     Language-adaptive Discord Markdown formatter:
-    - Preserves 100% clean LTR formatting on English lines (no RLM/LRM injection, no broken backticks).
+    - Preserves 100% clean LTR formatting on English lines (injecting LRM on LTR blockquotes to prevent RTL bleeding).
     - Applies RTL directionality and Bidi isolation ONLY on Arabic lines.
+    - Normalizes mismatched Discord quote headers and separates quote header/body paragraphs.
     - Never injects Unicode direction marks inside inline code (`...`) or fenced code blocks (```...```).
     - Only auto-attaches media/export files (images, PDFs, audio/video, or explicit discord_exports),
       never spamming source code files (.py, .sh, .md, .json) when linked in prose.
@@ -182,7 +270,7 @@ def format_for_discord(md_text):
     # Discord markdown only supports headings up to level 3 (###).
     text = re.sub(r"^#{4,}\s*", "### ", text, flags=re.MULTILINE)
 
-    lines = text.split("\n")
+    lines = _normalize_discord_quote_blocks(text.split("\n"))
     in_code = False
     out_lines = []
     rlm = "\u200F"
@@ -216,21 +304,31 @@ def format_for_discord(md_text):
                 line = line[:-1] + "؟"
 
             marker_match = re.match(
-                r"^(\s*(?:[-•]|\*(?!\*))\s+|\s*\d+\.\s+|\s*#{1,3}\s+|\s*>\s*)(.*)",
+                r"^(\s*(?:[-•]|\*(?!\*))\s+|\s*\d+\.\s+|\s*#{1,3}\s+|\s*(?:>\s*)+)(.*)",
                 line,
             )
             if marker_match:
                 prefix = marker_match.group(1)
-                rest = marker_match.group(2)
-                line = f"{prefix}{rlm}{rest.strip()}"
+                rest = marker_match.group(2).strip()
+                if rest:
+                    line = f"{prefix}{rest if rest.startswith(rlm) else rlm + rest}"
+                else:
+                    line = prefix.rstrip()
             else:
-                line = f"{rlm}{line}"
+                line = line if line.startswith(rlm) else f"{rlm}{line}"
 
             # Isolate inline code spans on Arabic lines without touching content inside backticks
             line = re.sub(r"(`[^`]+`)", rf"{lrm}\1{rlm}", line)
         else:
-            # Pure English / LTR line: strip any stray <bdi> tags cleanly with zero invisible marks
+            # English / LTR line: strip any stray <bdi> tags cleanly, and inject LRM on LTR blockquotes
+            # so Discord never inherits RTL directionality from adjacent Arabic lines or thread titles.
             line = re.sub(r"</?bdi[^>]*>", "", line, flags=re.IGNORECASE)
+            m_quote = re.match(r"^(\s*(?:>\s*)+)(.*)$", line)
+            if m_quote:
+                prefix = m_quote.group(1)
+                rest = m_quote.group(2).strip()
+                if rest:
+                    line = f"{prefix}{rest if rest.startswith(lrm) else lrm + rest}"
 
         out_lines.append(line)
 
@@ -300,7 +398,7 @@ def send_discord_rich(token, target_channel_id, text, is_user_prompt=False, ping
     if is_user_prompt:
         embed = {
             "author": {"name": "👤 You"},
-            "description": text[:4000],
+            "description": _isolate_embed_directions(text)[:4000],
             "color": 0x5865F2,
         }
         try:

@@ -10,6 +10,15 @@
 [![Discord](https://img.shields.io/badge/Discord-Gateway%20v10-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
 [![Antigravity](https://img.shields.io/badge/Antigravity-IDE%20%26%20CLI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://github.com/google)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Remote%20Control%20(/rc)-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://claude.ai)
+[![Arabic Docs](https://img.shields.io/badge/Docs-bridge.benjelloun.dev-7a4b1e?style=for-the-badge&logo=readthedocs&logoColor=white)](https://bridge.benjelloun.dev)
+
+<p align="center">
+  <a href="https://bridge.benjelloun.dev"><strong>📖 التوثيق الكامل بالعربية (bridge.benjelloun.dev)</strong></a> ·
+  <a href="README.ar.md"><strong>🇦🇪 الدليل العربي (README.ar.md)</strong></a> ·
+  <a href="#why-this-repository-exists"><strong>💡 Why & Comparison</strong></a> ·
+  <a href="#mobile-interaction--command-reference"><strong>⌨️ Commands</strong></a> ·
+  <a href="#setup--installation"><strong>🚀 Quick Start</strong></a>
+</p>
 
 </div>
 
@@ -27,7 +36,18 @@ Because the workstation agent has full access to your local IDE workspaces, SSH 
 - **Manage Open VS Code / Antigravity IDE Workspaces**: Ask the agent to inspect, edit, test, or switch across open VS Code / Antigravity IDE workspaces (`~/projects/*`), auto-launch the Desktop IDE on the host display (`DISPLAY=:0` / Wayland) if closed, run Playwright browser checks, and send visual screenshots or diffs back to your phone.
 - **Open & Steer Remote SSH Sessions, Cloud Containers & Replit Workflows**: Instruct the agent (or use direct shell/agent sessions) to open remote SSH tunnels, manage cloud servers, or control **Replit containers** via SSH and GitHub sync—bypassing heavy mobile web IDEs entirely.
 - **Orchestrate Any Agent Runtime**: Seamlessly switch between **Google Antigravity Desktop IDE** (via local Language Server `agentapi`), **headless Antigravity CLI (`agy`)** across any model (`argon`, `flash`, `opus`, `sonnet`, `gpt`), **Claude Code Native** (`tmux` `/rc active` remote control + live terminal steering), subagents, or custom CLI agents.
-- **Supervise Background Pipelines & Host Telemetry**: Monitor long-running systemd jobs (such as the 16,700-volume / 174+ GB [`phone-library`](https://github.com/kmbenjel/phone-library) computer-vision pipeline), check multi-model AI quotas, search full-text archives of past sessions, and cancel runaway processes in under a second.
+- **Supervise Background Pipelines & Host Telemetry**: Monitor long-running systemd jobs (such as the 16,757-volume / 175 GB [`phone-library`](https://github.com/kmbenjel/phone-library) pipeline and [`warraq`](https://warraq.benjelloun.dev) open tools), check multi-model AI quotas, search full-text archives of past sessions, and cancel runaway processes in under a second.
+
+### How It Compares to Alternatives
+
+| Capability | Workstation Discord Bridge | Termux / SSH + `tmux` | Claude Code `/rc` Alone | Generic Discord Shell Bots |
+|---|---|---|---|---|
+| **Zero-prefix natural chat (text, voice, images)** | ✅ 1:1 thread per conversation | ❌ Terminal prompt only | ⚠️ Single-agent only | ❌ Rigid `!commands` only |
+| **Multi-runtime (Antigravity IDE + `agy CLI` + Claude Code)** | ✅ Unified switcher & quotas | Manual CLI per pane | ❌ Claude only | ❌ Shell only |
+| **Voice notes & inline text-file ingestion** | ✅ Auto-downloads + reads `.txt`/`.md`/`.json`/`.py` inline | ❌ No voice / awkward upload | ❌ No Discord media | ⚠️ Partial |
+| **Bidirectional Arabic RTL & English LTR formatting** | ✅ UAX #9 per-paragraph Bidi (`RLM`/`LRM`), preserves code | ❌ Broken Arabic shaping | ⚠️ Web UI only | ❌ Garbled mixed RTL/LTR |
+| **Desktop IDE auto-wake (`!open`) & Playwright GUI** | ✅ Reconstructs `:0` / Wayland display | ❌ Manual X11 forwarding | ❌ Headless only | ❌ None |
+| **Push notifications & zero open inbound ports** | ✅ Outbound HTTPS only | ❌ Drops on mobile network switch | ✅ Push via app | ✅ Bot mentions |
 
 > **🔒 Security & Private Instance Model**: Because this bridge grants full-privilege control over the host workstation (autonomous agents, IDE workspaces, SSH sessions, and shell execution), the live bot is **strictly private and single-tenant**—operating inside a private, single-member Discord server scoped to a single owner (`guild_id`, `channel_id`, and `user_id` in a `0600`-permissioned local config) with **zero open inbound network ports** (all traffic uses outbound HTTPS polling and lifecycle pushes). The codebase is published here as an open-source reference architecture so other engineers can self-host their own private workstation bridge.
 
@@ -155,7 +175,9 @@ flowchart TB
 
 ### 1. Direct Conversational Pair-Programming with Antigravity
 - **Zero-Prefix Chat**: Type naturally in `#general` to spin up a new Discord thread and launch a fresh Antigravity session, or reply inside any existing thread to continue that exact conversation.
-- **Voice, Image & File Understanding**: Record a voice message or attach a screenshot on your phone; `discord_listener.py` downloads it locally and passes `file://` references directly to Antigravity for multimodal analysis.
+- **Voice, Image & Inline Text-Attachment Ingestion**: Record a voice message, drop a screenshot, or attach `.txt`, `.md`, `.json`, `.csv`, `.yaml`, `.py`, `.sh`, or `.log` files on your phone; `discord_listener.py` downloads them locally, stages `file://` links, and automatically injects up to `30 KB` of text attachments inline into the agent prompt.
+- **Smart Bidirectional (Arabic RTL / English LTR) Rendering**: `format_for_discord()` uses Unicode UAX #9 first-strong-character analysis (`is_arabic_text`), automatically aligns Arabic quote headers with Arabic questions and English headers with English questions, separates blockquote header/body paragraphs with an empty `>` line (`RLM`/`LRM` isolation), and leaves code spans and fenced code blocks untouched.
+- **Cooperative Foreground / Daemon Lock Hand-off**: When an interactive Antigravity turn spawns a foreground `discord_listener.py`, the persistent `systemd` background daemon automatically yields the lock (`has_active_foreground_listener()`) and resumes seamlessly when the turn exits.
 - **Full Workspace & Tool Access**: Through natural conversation, ask Antigravity to refactor code in your open VS Code workspace, run test suites, inspect browser rendering via Playwright/DevTools MCP, or generate PDFs and images that are uploaded straight back to Discord.
 
 ### 2. Remote SSH, Cloud Containers & VS Code Workspace Management
@@ -165,8 +187,8 @@ flowchart TB
 
 ### 3. Multi-Agent Steering: Claude Code Remote Control (`!claude`) & Headless `agy` (`!cli`)
 - **Claude Code Native Bridge (`!claude` / `!remote`)**: Connects to Claude Code's remote session (`/rc active`) inside a managed `tmux` session (`claude-remote`), surfaces the one-tap mobile handoff URL (`https://claude.ai/code/session_...`), mirrors the live terminal (`!claude pane`), and pipes prompts directly into the TUI (`!claude <prompt>`).
-- **Headless Antigravity CLI (`!cli`)**: Run or resume any Desktop or CLI conversation asynchronously with explicit model and effort selection (`!cli --model=opus --effort=high <prompt>`).
-- **Multi-Model Quota Inspector (`!models` / `!quota`)**: Queries the local Language Server `GetUserStatus` RPC to display live remaining quota percentages and UTC reset times across Gemini Argon, Gemini 3.8 Flash, Claude Opus 5.5, Claude Sonnet 5.5, and GPT-OSS.
+- **Headless Antigravity CLI (`!cli`)**: Run or resume any Desktop or CLI conversation asynchronously with explicit model and effort selection (`!cli --model=orchestrator <prompt>` or `--model=opus --effort=high`), defaulting to **Gemini Orchestrator (`gemini-pro-orchestrator-g1-pro`)** with automatic quota-aware fallback to `gemini-3.8-flash-medium`.
+- **Multi-Model Quota Inspector (`!models` / `!quota`)**: Queries the local Language Server `GetUserStatus` RPC to display live remaining quota percentages and UTC reset times across **Gemini Orchestrator / Argon / Hydrogen**, **Gemini 3.8 Flash**, **Claude Opus 5.5 / Sonnet 5.5**, and **GPT-OSS**.
 
 ### 4. Conversation Archive Search, Branching & Telemetry (`!search`, `!read`, `!fork`, `!status`)
 - **Full-Text Archive Search (`!search <query>`)**: Searches across all Desktop and CLI sessions via Language Server RPC and SQLite FTS5 (`conversation_summaries.db`), returning matching snippets and index numbers.
@@ -236,19 +258,28 @@ Authentic captures from the Discord mobile client during live workstation sessio
 
 ```text
 workstation-discord-bridge/
-├── discord_listener.py         # Dual-mode inbound poller (in-session [DISCORD_MESSAGE] wakeup + daemon router)
+├── discord_listener.py         # Dual-mode inbound poller (in-session [DISCORD_MESSAGE] wakeup, lock yielding & inline text ingestion)
 ├── discord_manager.py          # Session controller, LS port/CSRF discovery, Desktop<->CLI store unification & Claude bridge
-├── discord_hook.py             # Antigravity Stop hook: transcript reader, Bidi/Markdown formatter & file uploader
+├── discord_hook.py             # Antigravity Stop hook: transcript reader, UAX #9 Bidi/Markdown formatter & file uploader
 ├── discord_status.py           # Hardware telemetry, systemd service inspector, and pipeline status collector
 ├── discord_send.py             # Standalone CLI utility for mid-turn agent notifications to Discord
 ├── hooks.json.example          # Antigravity Stop lifecycle hook configuration (~/.gemini/config/hooks.json)
 ├── discord_config.example.json # Bot token, guild, channel, and user ID configuration schema
 ├── requirements.txt            # Zero mandatory external dependencies (runs on Python 3.10+ stdlib)
+├── scripts/
+│   └── build_docs.py           # Static Arabic documentation site generator for bridge.benjelloun.dev
 ├── docs/
+│   ├── ar/                     # Full multi-page Arabic documentation source (8 guides)
+│   ├── en/                     # English landing companion page
+│   ├── assets/                 # Self-hosted Readex Pro & Kawkab Mono fonts, RTL stylesheet & search JS
 │   └── screenshots/            # Live mobile captures from Discord iOS/Android client
 ├── systemd/
 │   └── discord-listener.service# Systemd user service unit for continuous background operation
-└── README.md                   # Architecture & setup documentation
+├── .github/workflows/
+│   ├── ci.yml                  # Python bytecode compilation & schema check
+│   └── pages.yml               # GitHub Pages build & deployment to bridge.benjelloun.dev
+├── README.md                   # English architecture & setup documentation
+└── README.ar.md                # Dedicated Arabic README (الدليل العربي الكامل)
 ```
 
 ---

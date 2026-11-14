@@ -408,6 +408,10 @@ def main():
     try:
         lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR, 0o666)
         while True:
+            # If a foreground agent listener is waiting for stdout, yield the lock to it
+            if not is_agent_task and discord_manager.has_active_foreground_listener():
+                time.sleep(2)
+                continue
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
@@ -426,6 +430,22 @@ def main():
     _err_streak = 0
     while True:
         try:
+            # Yield lock if this is the background daemon and an agent-spawned foreground listener is active
+            if not is_agent_task and discord_manager.has_active_foreground_listener():
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                except Exception:
+                    pass
+                while discord_manager.has_active_foreground_listener():
+                    time.sleep(2)
+                while True:
+                    try:
+                        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except (BlockingIOError, OSError):
+                        time.sleep(2)
+                state = load_json(LISTENER_STATE_FILE, {})
+
             # Re-read state from disk on each loop iteration to catch concurrent updates
             state = load_json(LISTENER_STATE_FILE, state)
             now = time.time()
@@ -541,6 +561,16 @@ def main():
                                 for lp, fn in other_local_paths:
                                     lbl = "📎 **ملف مرفق:**" if msg_lang == "ar" else "📎 **Attached File:**"
                                     full_text = (full_text + ("\n" if full_text else "") + f"{lbl} [{fn}](file://{lp})").strip()
+                                    if os.path.splitext(fn)[1].lower() in (".txt", ".md", ".json", ".csv", ".yaml", ".yml", ".py", ".sh", ".log"):
+                                        try:
+                                            with open(lp, "r", encoding="utf-8", errors="replace") as tf:
+                                                txt_body = tf.read(30000).strip()
+                                            if txt_body:
+                                                full_text += f"\n\n--- Content of `{fn}` ---\n{txt_body}\n--- End of `{fn}` ---"
+                                                if not content:
+                                                    msg_lang = discord_hook.detect_language(txt_body)
+                                        except Exception:
+                                            pass
                             if att_urls:
                                 full_text = (full_text + ("\n" if full_text else "") + "Attachments: " + ", ".join(att_urls)).strip()
 

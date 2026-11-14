@@ -1288,9 +1288,13 @@ def get_sessions_report(lang="en"):
     return "\n".join(lines)
 
 
+DEFAULT_ORCHESTRATOR_MODEL = "gemini-pro-orchestrator-g1-pro"
+
 MODEL_ALIASES = {
-    # short alias -> agy CLI model id
-    "argon": "gemini-4-argon-high", "pro": "gemini-4-argon-high", "gemini": "gemini-4-argon-high",
+    # short alias -> agy CLI / agentapi model id
+    "orchestrator": DEFAULT_ORCHESTRATOR_MODEL, "orch": DEFAULT_ORCHESTRATOR_MODEL,
+    "argon": "gemini-4-argon-high", "pro": DEFAULT_ORCHESTRATOR_MODEL, "gemini": DEFAULT_ORCHESTRATOR_MODEL,
+    "hydrogen": "gemini-4-hydrogen-high",
     "flash": "gemini-3.8-flash-medium", "fast": "gemini-3.8-flash-low",
     "opus": "claude-opus-5-5-high", "claude": "claude-opus-5-5-high",
     "sonnet": "claude-sonnet-5-5-medium", "gpt": "gpt-oss-120b-medium", "oss": "gpt-oss-120b-medium",
@@ -1298,7 +1302,7 @@ MODEL_ALIASES = {
 
 
 def resolve_model_alias(name, effort=None):
-    """Maps friendly names (`opus`, `flash`, `argon-low`, `Claude Opus 5.5 (High)`) to real agy model ids."""
+    """Maps friendly names (`orchestrator`, `opus`, `flash`, `argon-low`, `Claude Opus 5.5 (High)`) to real agy model ids."""
     if not name:
         return None
     n = name.strip().lower()
@@ -1389,8 +1393,8 @@ def get_models_report(lang="en"):
     lines.append("────────────────────────────")
     lines.append("ℹ️ " + ("النماذج التي تتشارك نفس الحصة تظهر بنفس النسبة (حصة مشتركة للعائلة)." if ar
                          else "Models sharing one quota pool show the same percentage."))
-    lines.append("💡 " + ("مثال: `!cli --model=opus --effort=high <سؤالك>` (أسماء مختصرة: argon, flash, opus, sonnet, gpt)" if ar
-                         else "Example: `!cli --model=opus --effort=high <prompt>` (aliases: argon, flash, opus, sonnet, gpt; or full ids like `gemini-4-argon-low`)"))
+    lines.append("💡 " + ("مثال: `!cli --model=orchestrator <سؤالك>` (أسماء مختصرة: orchestrator, argon, flash, opus, sonnet, gpt)" if ar
+                         else "Example: `!cli --model=orchestrator <prompt>` (aliases: orchestrator, argon, flash, opus, sonnet, gpt; or full ids like `gemini-pro-orchestrator-g1-pro`)"))
     return "\n".join(lines)
 
 
@@ -1617,8 +1621,11 @@ def run_cli_prompt_command(token, general_channel_id, source_channel_id, author_
     cmd = [AGY_CLI_BIN]
     if target_cid:
         cmd.extend(["--conversation", target_cid])
-    if model_opt:
-        cmd.extend(["--model", resolve_model_alias(model_opt, effort_opt)])
+    resolved_model = resolve_model_alias(model_opt, effort_opt) if model_opt else (
+        DEFAULT_ORCHESTRATOR_MODEL if not is_pro_quota_exhausted() else "gemini-3.8-flash-medium"
+    )
+    if resolved_model:
+        cmd.extend(["--model", resolved_model])
     if effort_opt:
         cmd.extend(["--effort", effort_opt])
     cmd.extend(["--dangerously-skip-permissions", "-p", prompt])
@@ -1860,11 +1867,13 @@ def has_active_foreground_listener(exclude_pid=None):
 
 
 def is_pro_quota_exhausted():
-    """True when every Gemini Argon (agentapi `pro` tier) model reports 0% remaining quota."""
+    """True when every Orchestrator (Argon) / Gemini Argon model reports 0% remaining quota."""
     try:
         us = (ls_rpc("GetUserStatus", {}) or {}).get("userStatus", {})
-        cfgs = [c for c in us.get("cascadeModelConfigData", {}).get("clientModelConfigs", [])
-                if "argon" in (c.get("modelId") or c.get("label", "")).lower()]
+        cfgs = [
+            c for c in us.get("cascadeModelConfigData", {}).get("clientModelConfigs", [])
+            if any(k in ((c.get("modelId") or "") + " " + (c.get("label") or "")).lower() for k in ("orchestrator", "argon"))
+        ]
         return bool(cfgs) and all(
             c.get("quotaInfo") is not None and c["quotaInfo"].get("remainingFraction", 0.0) <= 0 for c in cfgs)
     except Exception:
@@ -1909,7 +1918,7 @@ def dispatch_prompt_via_agentapi(target_conv_id, thread_id, thread_name, author_
             return True, target_conv_id, None
 
     before_cids = set(c["id"] for c in list_all_conversations(include_archived=True))
-    tiers = ["pro", "flash"] if not is_pro_quota_exhausted() else ["flash"]
+    tiers = [DEFAULT_ORCHESTRATOR_MODEL, "gemini-4-argon-high", "flash"] if not is_pro_quota_exhausted() else ["flash"]
     ok, res = False, {}
     for i, tier in enumerate(tiers):
         ok, res = call_agentapi(["new-conversation", f"--model={tier}", f"--title={clean_title}", formatted_prompt],
@@ -1988,7 +1997,7 @@ def get_help_report(lang="en"):
         "- `!read <num|id> [all|N]` — Open a conversation in a dedicated thread and read its summary or full transcript.\n\n"
         "⚡ **Session Control (Desktop & Headless CLI):**\n"
         "- `!sessions` (or `!running`) — Live dashboard of Desktop app, Language Server, CLI, and active cascades.\n"
-        "- `!cli [--model=argon|flash|opus|sonnet|gpt|<id>] [--effort=low|medium|high] <prompt>` — Run or continue any session via headless `agy` CLI.\n"
+        "- `!cli [--model=orchestrator|argon|flash|opus|sonnet|gpt|<id>] [--effort=low|medium|high] <prompt>` — Run or continue any session via headless `agy` CLI.\n"
         "- `!stop [num|id]` (or `!cancel`) — Stop/cancel a running or stuck cascade on Desktop or CLI.\n"
         "- `!fork [num|id]` — Fork a conversation into a new branch thread.\n"
         "- `!models` (or `!quota`) — List all AI models with live remaining quota percentages and reset times.\n"
