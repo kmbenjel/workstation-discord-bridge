@@ -8,6 +8,7 @@ import json
 import re
 import shutil
 from dataclasses import dataclass, field
+from datetime import date
 from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -131,17 +132,50 @@ def render_md(body: str) -> tuple[str, list]:
 
 
 BASE_TMPL = """{% set is_ar = (lang == "ar") -%}
+{% set site_name = 'جسر ديسكورد لمحطة العمل' if is_ar else 'Workstation Discord Bridge' -%}
+{% set full_title = page.title ~ ' · ' ~ site_name -%}
 <!doctype html>
 <html lang="{{ lang }}" dir="{{ 'rtl' if is_ar else 'ltr' }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>{{ page.title }} · {{ 'جسر ديسكورد لمحطة العمل' if is_ar else 'Workstation Discord Bridge' }}</title>
+<title>{{ full_title }}</title>
 <meta name="description" content="{{ page.description }}">
+<meta name="author" content="Khalid Benjelloun">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf8f3">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d0c09">
 <link rel="canonical" href="{{ canonical }}">
+{% if has_en_alt -%}
+<link rel="alternate" hreflang="ar" href="{{ site_url }}/">
+<link rel="alternate" hreflang="en" href="{{ site_url }}/en/">
+<link rel="alternate" hreflang="x-default" href="{{ site_url }}/">
+{% else -%}
+<link rel="alternate" hreflang="ar" href="{{ canonical }}">
+<link rel="alternate" hreflang="x-default" href="{{ canonical }}">
+{% endif -%}
+<meta property="og:type" content="{{ og_type }}">
+<meta property="og:site_name" content="{{ site_name }}">
+<meta property="og:locale" content="{{ 'ar_AR' if is_ar else 'en_US' }}">
+<meta property="og:locale:alternate" content="{{ 'en_US' if is_ar else 'ar_AR' }}">
+<meta property="og:title" content="{{ full_title }}">
+<meta property="og:description" content="{{ page.description }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ og_image }}">
+<meta property="og:image:secure_url" content="{{ og_image }}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{ og_alt }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ full_title }}">
+<meta name="twitter:description" content="{{ page.description }}">
+<meta name="twitter:image" content="{{ og_image }}">
+<meta name="twitter:image:alt" content="{{ og_alt }}">
 <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/assets/fonts/readex-pro-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/css/site.css?v={{ ver }}">
+<script type="application/ld+json">{{ ld_json|safe }}</script>
 <script>try{var t=localStorage.getItem("warraq-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body class="doc has-nav{% if page.toc and page.toc|length > 1 %} has-toc{% endif %}">
@@ -262,6 +296,9 @@ def build() -> None:
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
     shutil.copytree(DOCS / "assets", OUT / "assets")
+    og_src = DOCS / "assets" / "img" / "og.png"
+    if og_src.is_file():
+        shutil.copy2(og_src, OUT / "og.png")
     if (DOCS / "screenshots").is_dir():
         shutil.copytree(DOCS / "screenshots", OUT / "screenshots")
     (OUT / "CNAME").write_text(f"{CNAME}\n", encoding="utf-8")
@@ -300,16 +337,69 @@ def build() -> None:
     tmpl = env.from_string(BASE_TMPL)
     ver = asset_version()
 
+    og_image = f"{SITE_URL}/og.png"
+    og_alt_ar = "جسر ديسكورد لمحطة العمل — حوار مباشر من الهاتف مع Google Antigravity وClaude Code وagy CLI"
+    og_alt_en = "Workstation Discord Bridge — Two-way mobile bridge for Google Antigravity, Claude Code, and agy CLI"
+    all_urls: list[str] = []
+
     for lang in ("ar", "en"):
         search_items = []
         seq = ar_seq if lang == "ar" else pages["en"]
+        site_name = "جسر ديسكورد لمحطة العمل" if lang == "ar" else "Workstation Discord Bridge"
         for idx, p in enumerate(seq):
             prev_p = seq[idx - 1] if idx > 0 else None
             next_p = seq[idx + 1] if idx + 1 < len(seq) else None
+            canonical = f"{SITE_URL}{p.url}"
+            all_urls.append(canonical)
+            is_home = p.rel == "index.md"
+            og_type = "website" if is_home else "article"
+            ld_data = (
+                {
+                    "@context": "https://schema.org",
+                    "@graph": [
+                        {
+                            "@type": "WebSite",
+                            "name": site_name,
+                            "url": canonical,
+                            "inLanguage": lang,
+                            "description": p.description,
+                        },
+                        {
+                            "@type": "SoftwareSourceCode",
+                            "name": "workstation-discord-bridge",
+                            "codeRepository": REPO_URL,
+                            "programmingLanguage": "Python",
+                            "license": "https://opensource.org/licenses/MIT",
+                            "author": {"@type": "Person", "name": "Khalid Benjelloun"},
+                            "description": p.description,
+                            "image": og_image,
+                        },
+                    ],
+                }
+                if is_home
+                else {
+                    "@context": "https://schema.org",
+                    "@type": "TechArticle",
+                    "headline": p.title,
+                    "description": p.description,
+                    "inLanguage": lang,
+                    "url": canonical,
+                    "image": og_image,
+                    "author": {"@type": "Person", "name": "Khalid Benjelloun"},
+                    "isPartOf": {"@type": "WebSite", "name": site_name, "url": f"{SITE_URL}/"},
+                }
+            )
+            ld_json = json.dumps(ld_data, ensure_ascii=False).replace("</", "<\\/")
             html = tmpl.render(
                 lang=lang,
                 page=p,
-                canonical=f"{SITE_URL}{p.url}",
+                canonical=canonical,
+                site_url=SITE_URL,
+                has_en_alt=is_home,
+                og_type=og_type,
+                og_image=og_image,
+                og_alt=og_alt_ar if lang == "ar" else og_alt_en,
+                ld_json=ld_json,
                 ver=ver,
                 repo_url=REPO_URL,
                 nav_top=ar_top,
@@ -333,6 +423,48 @@ def build() -> None:
         idx_path = OUT / ("en/search.json" if lang == "en" else "search.json")
         idx_path.parent.mkdir(parents=True, exist_ok=True)
         idx_path.write_text(json.dumps(search_items, ensure_ascii=False), encoding="utf-8")
+
+    today = date.today().isoformat()
+    url_nodes = "\n".join(
+        f"  <url>\n    <loc>{u}</loc>\n    <lastmod>{today}</lastmod>\n  </url>"
+        for u in all_urls
+    )
+    (OUT / "sitemap.xml").write_text(
+        f'<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{url_nodes}\n"
+        f"</urlset>\n",
+        encoding="utf-8",
+    )
+    (OUT / "robots.txt").write_text(
+        f"User-agent: *\nAllow: /\n\nSitemap: {SITE_URL}/sitemap.xml\n",
+        encoding="utf-8",
+    )
+    (OUT / "404.html").write_text(
+        f"""<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>404 · الصفحة غير موجودة — جسر ديسكورد لمحطة العمل</title>
+<link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/css/site.css?v={ver}">
+</head>
+<body>
+<main style="max-width:640px;margin:14vh auto;padding:24px;text-align:center;">
+  <h1 style="font-size:2.4rem;margin-bottom:0.6rem;">404 — الصفحة غير موجودة</h1>
+  <p style="opacity:0.8;margin-bottom:1.6rem;">المسار المطلوب غير متاح في التوثيق.</p>
+  <p style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+    <a href="/" style="padding:10px 20px;border-radius:10px;background:var(--accent, #e5b75a);color:#111;font-weight:700;text-decoration:none;">الرئيسية (عربي)</a>
+    <a href="/en/" dir="ltr" style="padding:10px 20px;border-radius:10px;border:1px solid currentColor;text-decoration:none;">English Overview</a>
+  </p>
+</main>
+</body>
+</html>
+""",
+        encoding="utf-8",
+    )
 
     print(f"Built {sum(len(v) for v in pages.values())} pages into {OUT}")
 
